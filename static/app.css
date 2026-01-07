@@ -8,10 +8,42 @@
   --accent-dark: #1e40af;
   --border: #1f2a4d;
   --shadow: 0 18px 50px rgba(4, 8, 20, 0.45);
+  --glow-strong: rgba(29, 78, 216, 0.25);
+  --glow-soft: rgba(255, 255, 255, 0.06);
+  --topbar-bg: rgba(10, 18, 38, 0.85);
+  --card-border: rgba(31, 42, 77, 0.8);
+  --input-bg: rgba(16, 26, 51, 0.75);
+  --input-bg-strong: rgba(16, 26, 51, 0.85);
+  --json-bg: #0b1224;
+  --json-ink: #dbeafe;
+  --link-hover: #93c5fd;
+  --btn-shadow: rgba(29, 78, 216, 0.35);
   --status-pending: #f2c94c;
   --status-processing: #56ccf2;
   --status-done: #27ae60;
   --status-failed: #eb5757;
+}
+
+html[data-theme="light"] {
+  --bg-start: #f5f7ff;
+  --bg-end: #e3ebff;
+  --card: #ffffff;
+  --ink: #111827;
+  --muted: #4b5563;
+  --accent: #1e3a8a;
+  --accent-dark: #1d4ed8;
+  --border: #d6deee;
+  --shadow: 0 18px 50px rgba(15, 23, 42, 0.12);
+  --glow-strong: rgba(29, 78, 216, 0.15);
+  --glow-soft: rgba(255, 255, 255, 0.8);
+  --topbar-bg: rgba(255, 255, 255, 0.92);
+  --card-border: rgba(210, 220, 240, 0.9);
+  --input-bg: rgba(248, 250, 252, 0.9);
+  --input-bg-strong: #ffffff;
+  --json-bg: #0b1224;
+  --json-ink: #e5e7eb;
+  --link-hover: #1d4ed8;
+  --btn-shadow: rgba(29, 78, 216, 0.2);
 }
 
 * {
@@ -23,8 +55,8 @@ body {
   font-family: "Space Grotesk", "IBM Plex Sans", "Segoe UI", sans-serif;
   color: var(--ink);
   background:
-    radial-gradient(circle at top, rgba(29, 78, 216, 0.25), transparent 45%),
-    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.06), transparent 40%),
+    radial-gradient(circle at top, var(--glow-strong), transparent 45%),
+    radial-gradient(circle at 20% 20%, var(--glow-soft), transparent 40%),
     linear-gradient(120deg, var(--bg-start), var(--bg-end));
   min-height: 100vh;
 }
@@ -35,7 +67,7 @@ a {
 }
 
 a:hover {
-  color: #93c5fd;
+  color: var(--link-hover);
 }
 
 .app-shell {
@@ -49,7 +81,7 @@ a:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(10, 18, 38, 0.85);
+  background: var(--topbar-bg);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
 }
@@ -84,7 +116,7 @@ main {
   border-radius: 18px;
   padding: 24px;
   box-shadow: var(--shadow);
-  border: 1px solid rgba(31, 42, 77, 0.8);
+  border: 1px solid var(--card-border);
 }
 
 .page-header {
@@ -110,7 +142,7 @@ main {
 
 .btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 20px rgba(209, 139, 71, 0.2);
+  box-shadow: 0 10px 20px var(--btn-shadow);
 }
 
 .btn-primary {
@@ -134,7 +166,7 @@ main {
   padding: 16px;
   border-radius: 14px;
   border: 1px dashed var(--border);
-  background: rgba(16, 26, 51, 0.75);
+  background: var(--input-bg);
   margin-bottom: 16px;
   width: 100%;
   color: var(--ink);
@@ -238,7 +270,7 @@ main {
   padding: 10px 14px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: rgba(16, 26, 51, 0.85);
+  background: var(--input-bg-strong);
   color: var(--ink);
 }
 
@@ -248,12 +280,16 @@ main {
 }
 
 pre.json-block {
-  background: #0b1224;
-  color: #dbeafe;
+  background: var(--json-bg);
+  color: var(--json-ink);
   padding: 18px;
   border-radius: 16px;
   overflow-x: auto;
   font-size: 13px;
+}
+
+.theme-toggle {
+  min-width: 130px;
 }
 
 @media (max-width: 768px) {

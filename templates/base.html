@@ -4,6 +4,25 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      (function () {
+        const storageKey = "theme";
+        const root = document.documentElement;
+        let theme = null;
+        try {
+          theme = localStorage.getItem(storageKey);
+        } catch (err) {
+          theme = null;
+        }
+        if (!theme) {
+          const prefersDark =
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches;
+          theme = prefersDark ? "dark" : "light";
+        }
+        root.dataset.theme = theme;
+      })();
+    </script>
     <title>{% block title %}Automacao de Documentos{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -21,6 +40,9 @@
           <span>Automacao de Contas</span>
         </div>
         <nav class="nav-links">
+          <button id="theme-toggle" class="btn btn-ghost theme-toggle" type="button">
+            Modo claro
+          </button>
           {% if user.is_authenticated %}
             <a href="{% url 'documents_list' %}">Documentos</a>
             <a href="{% url 'upload_documents' %}">Upload</a>
@@ -36,5 +58,35 @@
         </div>
       </main>
     </div>
+    <script>
+      (function () {
+        const storageKey = "theme";
+        const root = document.documentElement;
+        const button = document.getElementById("theme-toggle");
+        if (!button) {
+          return;
+        }
+
+        const setTheme = (theme) => {
+          root.dataset.theme = theme;
+          try {
+            localStorage.setItem(storageKey, theme);
+          } catch (err) {
+            // Ignore storage errors (private mode).
+          }
+          const isDark = theme === "dark";
+          button.textContent = isDark ? "Modo claro" : "Modo escuro";
+          button.setAttribute("aria-pressed", isDark ? "true" : "false");
+        };
+
+        const currentTheme = root.dataset.theme || "dark";
+        setTheme(currentTheme);
+
+        button.addEventListener("click", () => {
+          const nextTheme = root.dataset.theme === "dark" ? "light" : "dark";
+          setTheme(nextTheme);
+        });
+      })();
+    </script>
   </body>
 </html>
