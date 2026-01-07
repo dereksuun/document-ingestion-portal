@@ -1,15 +1,15 @@
 :root {
-  --bg-start: #f6f1e7;
-  --bg-end: #e7efe9;
-  --card: #ffffff;
-  --ink: #1f2933;
-  --muted: #52606d;
-  --accent: #d18b47;
-  --accent-dark: #b06f35;
-  --border: #e2e8f0;
-  --shadow: 0 18px 50px rgba(31, 41, 51, 0.12);
-  --status-pending: #f1c40f;
-  --status-processing: #2d9cdb;
+  --bg-start: #0b1124;
+  --bg-end: #0f1b3d;
+  --card: #101a33;
+  --ink: #e2e8f0;
+  --muted: #9aa7c7;
+  --accent: #1d4ed8;
+  --accent-dark: #1e40af;
+  --border: #1f2a4d;
+  --shadow: 0 18px 50px rgba(4, 8, 20, 0.45);
+  --status-pending: #f2c94c;
+  --status-processing: #56ccf2;
   --status-done: #27ae60;
   --status-failed: #eb5757;
 }
@@ -22,7 +22,9 @@ body {
   margin: 0;
   font-family: "Space Grotesk", "IBM Plex Sans", "Segoe UI", sans-serif;
   color: var(--ink);
-  background: radial-gradient(circle at top, rgba(209, 139, 71, 0.15), transparent 45%),
+  background:
+    radial-gradient(circle at top, rgba(29, 78, 216, 0.25), transparent 45%),
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.06), transparent 40%),
     linear-gradient(120deg, var(--bg-start), var(--bg-end));
   min-height: 100vh;
 }
@@ -33,7 +35,7 @@ a {
 }
 
 a:hover {
-  color: var(--accent-dark);
+  color: #93c5fd;
 }
 
 .app-shell {
@@ -47,7 +49,7 @@ a:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(10, 18, 38, 0.85);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
 }
@@ -82,7 +84,7 @@ main {
   border-radius: 18px;
   padding: 24px;
   box-shadow: var(--shadow);
-  border: 1px solid rgba(226, 232, 240, 0.8);
+  border: 1px solid rgba(31, 42, 77, 0.8);
 }
 
 .page-header {
@@ -117,13 +119,14 @@ main {
 }
 
 .btn-secondary {
-  background: rgba(209, 139, 71, 0.1);
-  color: var(--accent-dark);
+  background: rgba(29, 78, 216, 0.15);
+  color: #bfdbfe;
 }
 
 .btn-ghost {
   background: transparent;
   border: 1px solid var(--border);
+  color: var(--muted);
 }
 
 .input-file {
@@ -131,9 +134,10 @@ main {
   padding: 16px;
   border-radius: 14px;
   border: 1px dashed var(--border);
-  background: rgba(255, 255, 255, 0.7);
+  background: rgba(16, 26, 51, 0.75);
   margin-bottom: 16px;
   width: 100%;
+  color: var(--ink);
 }
 
 .table-card {
@@ -234,6 +238,8 @@ main {
   padding: 10px 14px;
   border-radius: 12px;
   border: 1px solid var(--border);
+  background: rgba(16, 26, 51, 0.85);
+  color: var(--ink);
 }
 
 .help-text {
@@ -242,8 +248,8 @@ main {
 }
 
 pre.json-block {
-  background: #111827;
-  color: #e5e7eb;
+  background: #0b1224;
+  color: #dbeafe;
   padding: 18px;
   border-radius: 16px;
   overflow-x: auto;
