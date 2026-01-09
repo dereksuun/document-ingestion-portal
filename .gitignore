@@ -1,1 +1,24 @@
-/.venv
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Django
+db.sqlite3
+media/
+staticfiles/
+*.log
+
+# Env
+.env
+.env.*
+.venv/
+venv/
+
+# OS/Editor
+.DS_Store
+.vscode/
+.idea/
