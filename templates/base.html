@@ -23,7 +23,7 @@
         root.dataset.theme = theme;
       })();
     </script>
-    <title>{% block title %}Automacao de Documentos{% endblock %}</title>
+    <title>{% block title %}TRATAMENTO DE DOCUMENTOS{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -36,8 +36,8 @@
     <div class="app-shell">
       <header class="topbar">
         <div class="brand">
-          <span>⚡</span>
-          <span>Automacao de Contas</span>
+          <span> <img src="https://media.licdn.com/dms/image/v2/D4D0BAQHlEfAdt5hENQ/company-logo_200_200/company-logo_200_200/0/1733762682366/salgadojradv_logo?e=2147483647&v=beta&t=JnEVuqA2WLQPS_JdA7cgrqNPy1w_caj3qfrmhOuTfDI" alt="Logo" width="48" height="48" /> </span>
+          <span>TRATAMENTO DE DOCUMENTOS</span>
         </div>
         <nav class="nav-links">
           <button id="theme-toggle" class="btn btn-ghost theme-toggle" type="button">
@@ -46,6 +46,7 @@
           {% if user.is_authenticated %}
             <a href="{% url 'documents_list' %}">Documentos</a>
             <a href="{% url 'upload_documents' %}">Upload</a>
+            <a href="{% url 'extraction_settings' %}">Configuracoes</a>
             <a href="{% url 'logout' %}">Sair</a>
           {% else %}
             <a href="{% url 'login' %}">Entrar</a>

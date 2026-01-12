@@ -14,6 +14,15 @@ class DocumentStatus(models.TextChoices):
     FAILED = "FAILED", "Falhou"
 
 
+class ExtractionProfile(models.Model):
+    owner = models.OneToOneField(User, on_delete=models.CASCADE, related_name="extraction_profile")
+    enabled_fields = models.JSONField(default=list)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"ExtractionProfile({self.owner_id})"
+
+
 class Document(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -31,6 +40,7 @@ class Document(models.Model):
     original_filename = models.CharField(max_length=255)
     stored_path = models.CharField(max_length=500, blank=True)
 
+    selected_fields = models.JSONField(default=list)
     extracted_json = models.JSONField(null=True, blank=True)
     error_message = models.TextField(blank=True, default="")
 

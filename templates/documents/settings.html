@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Configuracoes{% endblock %}
+
+{% block content %}
+  <div class="card">
+    <div class="page-header">
+      <div>
+        <h1>Configuracoes de extracao</h1>
+        <p class="help-text">Selecione os campos opcionais que devem ser extraidos em novos uploads.</p>
+        <p class="help-text">Campos base sempre extraidos: vencimento, valor, codigo e juros/multa.</p>
+      </div>
+      <a class="btn btn-ghost" href="{% url 'documents_list' %}">Voltar</a>
+    </div>
+
+    <form method="post" class="settings-form">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <div class="settings-grid">
+        {% for checkbox in form.enabled_fields %}
+          <label class="check-item">
+            {{ checkbox.tag }}
+            <span>{{ checkbox.choice_label }}</span>
+          </label>
+        {% endfor %}
+      </div>
+      <button class="btn btn-primary" type="submit">Salvar configuracoes</button>
+    </form>
+  </div>
+{% endblock %}

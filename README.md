@@ -57,9 +57,15 @@ Open:
 
 ## Notes and limitations (V1)
 
-- Only PDF with selectable text is supported (no OCR).
-- If a PDF has no text, it fails with a clear message.
+- OCR fallback is available for scanned PDFs (requires extra deps below).
+- If OCR deps are missing or OCR yields no text, it fails with a clear message.
 - Regex extraction is best-effort for: due date, amount, barcode/line.
+
+## OCR dependencies (optional)
+
+- Python: `pdf2image`, `pytesseract`
+- System (Linux): `tesseract-ocr`, `poppler-utils` (for `pdftoppm`)
+- Optional: set `OCR_LANG=por` if the Portuguese language pack is installed.
 
 ## Project structure
 
@@ -71,7 +77,7 @@ Open:
 ## Troubleshooting
 
 - If the upload does nothing, check the server console for form errors.
-- If you see "PDF sem texto", the file likely needs OCR (not in V1).
+- If you see "PDF sem texto", install OCR deps and retry.
 
 =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -133,9 +139,15 @@ Acesse:
 
 ## Notas e limitacoes (V1)
 
-- Apenas PDF com texto selecionavel (sem OCR).
-- Se o PDF nao tiver texto, falha com uma mensagem clara.
+- OCR fica disponivel para PDFs escaneados (requer deps extras abaixo).
+- Se faltar deps ou o OCR nao extrair texto, falha com uma mensagem clara.
 - Extracao via regex e best-effort para: vencimento, valor, codigo de barras/linha.
+
+## Dependencias de OCR (opcional)
+
+- Python: `pdf2image`, `pytesseract`
+- Sistema (Linux): `tesseract-ocr`, `poppler-utils` (para `pdftoppm`)
+- Opcional: defina `OCR_LANG=por` se o pacote de idioma estiver instalado.
 
 ## Estrutura do projeto
 
@@ -147,4 +159,4 @@ Acesse:
 ## Solucao de problemas
 
 - Se o upload nao fizer nada, verifique o console do servidor por erros do formulario.
-- Se aparecer "PDF sem texto", o arquivo provavelmente precisa de OCR (nao incluido na V1).
+- Se aparecer "PDF sem texto", instale as dependencias de OCR e tente novamente.

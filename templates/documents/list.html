@@ -9,80 +9,123 @@
       <a class="btn btn-primary" href="{% url 'upload_documents' %}">Novo upload</a>
     </div>
 
+    <div class="bulk-actions">
+      <form id="bulk-form" method="post" action="{% url 'process_documents_bulk' %}" class="bulk-form">
+        {% csrf_token %}
+        <button class="btn btn-secondary btn-sm" name="action" value="reprocess" type="submit">Reprocessar selecionados</button>
+        <button class="btn btn-ghost btn-sm" type="submit" formaction="{% url 'download_documents_json_bulk' %}">Download JSON selecionados</button>
+      </form>
+      <form method="post" action="{% url 'process_documents_pending' %}" class="bulk-form">
+        {% csrf_token %}
+        <button class="btn btn-ghost btn-sm" type="submit">Processar pendentes</button>
+      </form>
+      <button class="btn btn-ghost btn-sm" type="button" id="select-all">Selecionar todos</button>
+    </div>
+
     <div class="table-card">
-      <table class="table">
+      <table class="table table-resizable">
+        <colgroup>
+          <col class="col-select" />
+          <col class="col-name" />
+          <col class="col-date" />
+          <col class="col-info" />
+          <col class="col-status" />
+          <col class="col-actions" />
+        </colgroup>
         <thead>
           <tr>
-            <th>ID</th>
-            <th>Upload</th>
-            <th>Status</th>
-            <th>Vencimento</th>
-            <th>Valor</th>
-            <th>Linha digitavel</th>
-            <th>Acoes</th>
+            <th class="col-select" data-min-width="40">Sel</th>
+            <th data-min-width="160">Nome do documento</th>
+            <th data-min-width="120">Data cadastro</th>
+            <th data-min-width="220">Informações</th>
+            <th data-min-width="110">Status</th>
+            <th data-min-width="170">Ações</th>
           </tr>
         </thead>
         <tbody>
           {% for d in page_obj %}
             <tr>
-              <td title="{{ d.id }}">{{ d.id|slice:":8" }}...</td>
-              <td>{{ d.uploaded_at|date:"d/m/Y H:i" }}</td>
+              <td class="col-select">
+                <input type="checkbox" name="ids" value="{{ d.id }}" form="bulk-form" aria-label="Selecionar documento {{ d.id }}" />
+              </td>
+              <td>
+                <div class="doc-name">{% firstof d.original_filename "Arquivo" %}</div>
+              </td>
+              <td>
+                <div class="date-stack">
+                  <span>{{ d.uploaded_at|date:"d/m/Y" }}</span>
+                  <span class="time">{{ d.uploaded_at|date:"H:i" }}</span>
+                </div>
+              </td>
+              <td class="doc-info">
+                {% if d.extracted_json %}
+                  <div class="info-list">
+                    <div class="info-row">
+                      <span class="info-label">Data de Vencimento:</span>
+                      <span class="info-value">{{ d.extracted_json.dates.vencimento|default:"—" }}</span>
+                    </div>
+                    <div class="info-row">
+                      <span class="info-label">Valor do Documento:</span>
+                      <span class="info-value">{{ d.extracted_json.amounts.valor_documento|default:"—" }}</span>
+                    </div>
+                    <div class="info-row">
+                      <span class="info-label">Codigo de Barras:</span>
+                      {% with ld=d.extracted_json.barcode.linha_digitavel cb=d.extracted_json.barcode.codigo_barras %}
+                        {% if ld or cb %}
+                          <span class="info-value barcode-value" title="{{ ld|default:cb }}">{{ ld|default:cb }}</span>
+                        {% else %}
+                          <span class="info-value">—</span>
+                        {% endif %}
+                      {% endwith %}
+                    </div>
+                  </div>
+                {% else %}
+                  <div class="info-empty">—</div>
+                {% endif %}
+              </td>
               <td>
                 <span class="status-badge status-{{ d.status|lower }}">{{ d.get_status_display }}</span>
                 {% if d.status == "FAILED" and d.error_message %}
                   <span class="error-hint" title="{{ d.error_message }}">Erro</span>
                 {% endif %}
-              </td>
-              <td>
-                {% if d.extracted_json %}
-                  {{ d.extracted_json.dates.vencimento|default:"—" }}
-                {% else %}
-                  —
-                {% endif %}
-              </td>
-              <td>
-                {% if d.extracted_json %}
-                  {{ d.extracted_json.amounts.valor_documento|default:"—" }}
-                {% else %}
-                  —
-                {% endif %}
-              </td>
-              <td>
-                {% if d.extracted_json %}
-                  {% with ld=d.extracted_json.barcode.linha_digitavel cb=d.extracted_json.barcode.codigo_barras %}
-                    {% if ld or cb %}
-                      {{ ld|default:cb|truncatechars:22 }}
-                    {% else %}
-                      —
-                    {% endif %}
-                  {% endwith %}
-                {% else %}
-                  —
+                {% if d.processed_at and d.status == "DONE" %}
+                {% elif d.processed_at and d.status == "FAILED" %}
+                  <div class="status-meta">Falhou: {{ d.processed_at|date:"d/m/Y H:i" }}</div>
                 {% endif %}
               </td>
               <td>
                 <div class="actions">
-                  <a class="btn btn-secondary" href="{% url 'document_json' d.id %}">Ver JSON</a>
-                  <a class="btn btn-ghost" href="{% url 'document_json_download' d.id %}">Download JSON</a>
-                  <a class="btn btn-ghost" href="{% url 'download_document' d.id %}">Download</a>
                   {% if d.status == "PENDING" or d.status == "FAILED" %}
                     <form method="post" action="{% url 'process_document' d.id %}" class="inline-form">
                       {% csrf_token %}
-                      <button type="submit" class="btn btn-primary">Processar</button>
+                      <button type="submit" class="btn btn-primary btn-sm">Processar</button>
                     </form>
                   {% elif d.status == "DONE" %}
                     <form method="post" action="{% url 'process_document' d.id %}" class="inline-form">
                       {% csrf_token %}
                       <input type="hidden" name="reprocess" value="1" />
-                      <button type="submit" class="btn btn-secondary">Reprocessar</button>
+                      <button type="submit" class="btn btn-secondary btn-sm">Reprocessar</button>
                     </form>
                   {% endif %}
+                  <details class="drop">
+                    <summary class="btn btn-ghost btn-sm">⋯</summary>
+                    <div class="drop-menu">
+                      {% if d.extracted_json %}
+                        <a href="{% url 'document_json' d.id %}">Ver JSON</a>
+                        <a href="{% url 'document_json_download' d.id %}">Download JSON</a>
+                      {% else %}
+                        <span class="drop-item is-disabled">Ver JSON</span>
+                        <span class="drop-item is-disabled">Download JSON</span>
+                      {% endif %}
+                      <a href="{% url 'download_document' d.id %}">Download arquivo</a>
+                    </div>
+                  </details>
                 </div>
               </td>
             </tr>
           {% empty %}
             <tr>
-              <td colspan="7">Nenhum documento enviado ainda.</td>
+              <td colspan="6">Nenhum documento enviado ainda.</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -99,4 +142,104 @@
       {% endif %}
     </div>
   </div>
+
+  <script>
+    (function () {
+      const table = document.querySelector(".table-resizable");
+      if (!table) {
+        return;
+      }
+
+      const headerRow = table.querySelector("thead tr");
+      if (!headerRow) {
+        return;
+      }
+
+      const headers = Array.from(headerRow.children);
+      let colgroup = table.querySelector("colgroup");
+      if (!colgroup) {
+        colgroup = document.createElement("colgroup");
+        headers.forEach(() => colgroup.appendChild(document.createElement("col")));
+        table.insertBefore(colgroup, table.querySelector("thead"));
+      }
+
+      const cols = Array.from(colgroup.children);
+      if (cols.length !== headers.length) {
+        colgroup.innerHTML = "";
+        headers.forEach(() => colgroup.appendChild(document.createElement("col")));
+      }
+
+      const getMinWidth = (th) => {
+        const raw = th.getAttribute("data-min-width");
+        const parsed = parseInt(raw || "", 10);
+        if (Number.isNaN(parsed)) {
+          return 60;
+        }
+        return Math.max(parsed, 40);
+      };
+
+      headers.forEach((th, index) => {
+        const col = cols[index];
+        const width = Math.max(getMinWidth(th), Math.round(th.getBoundingClientRect().width));
+        col.style.width = `${width}px`;
+
+        const handle = document.createElement("span");
+        handle.className = "col-resizer";
+        handle.addEventListener("mousedown", (event) => {
+          event.preventDefault();
+          const startX = event.pageX;
+          const startWidth = col.getBoundingClientRect().width;
+          const minWidth = getMinWidth(th);
+
+          const onMouseMove = (moveEvent) => {
+            const delta = moveEvent.pageX - startX;
+            const nextWidth = Math.max(minWidth, startWidth + delta);
+            col.style.width = `${nextWidth}px`;
+          };
+
+          const onMouseUp = () => {
+            document.removeEventListener("mousemove", onMouseMove);
+            document.removeEventListener("mouseup", onMouseUp);
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+          };
+
+          document.addEventListener("mousemove", onMouseMove);
+          document.addEventListener("mouseup", onMouseUp);
+          document.body.style.cursor = "col-resize";
+          document.body.style.userSelect = "none";
+        });
+
+        th.appendChild(handle);
+      });
+    })();
+  </script>
+  <script>
+    (function () {
+      const selectAllButton = document.getElementById("select-all");
+      const checkboxes = Array.from(document.querySelectorAll('input[name="ids"]'));
+      if (!selectAllButton || checkboxes.length === 0) {
+        return;
+      }
+
+      const updateLabel = () => {
+        const allChecked = checkboxes.every((checkbox) => checkbox.checked);
+        selectAllButton.textContent = allChecked ? "Desmarcar todos" : "Selecionar todos";
+      };
+
+      selectAllButton.addEventListener("click", () => {
+        const allChecked = checkboxes.every((checkbox) => checkbox.checked);
+        checkboxes.forEach((checkbox) => {
+          checkbox.checked = !allChecked;
+        });
+        updateLabel();
+      });
+
+      checkboxes.forEach((checkbox) => {
+        checkbox.addEventListener("change", updateLabel);
+      });
+
+      updateLabel();
+    })();
+  </script>
 {% endblock %}

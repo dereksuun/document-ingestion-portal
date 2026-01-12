@@ -16,7 +16,83 @@
         <p class="error-hint">{{ form.files.errors|striptags }}</p>
       {% endif %}
       {{ form.files }}
+      <div id="file-previews" class="file-previews"></div>
       <button type="submit" class="btn btn-primary">Enviar</button>
     </form>
   </div>
+
+  <script>
+    (function () {
+      const input = document.getElementById("id_files");
+      const previews = document.getElementById("file-previews");
+      if (!input || !previews) {
+        return;
+      }
+
+      const formatSize = (bytes) => {
+        const kb = bytes / 1024;
+        if (kb < 1024) {
+          return `${kb.toFixed(0)} KB`;
+        }
+        const mb = kb / 1024;
+        return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`;
+      };
+
+      const renderFiles = (files) => {
+        previews.innerHTML = "";
+        files.forEach((file) => {
+          const card = document.createElement("div");
+          card.className = "file-card";
+
+          const thumb = document.createElement("div");
+          thumb.className = "file-thumb";
+
+          if (file.type.startsWith("image/")) {
+            const img = document.createElement("img");
+            img.alt = file.name;
+            img.loading = "lazy";
+            img.src = URL.createObjectURL(file);
+            img.onload = () => URL.revokeObjectURL(img.src);
+            thumb.appendChild(img);
+          } else {
+            const badge = document.createElement("div");
+            badge.className = "file-badge";
+            badge.textContent = file.type === "application/pdf" ? "PDF" : "ARQ";
+
+            const open = document.createElement("a");
+            open.className = "file-open";
+            open.textContent = "Abrir";
+            const url = URL.createObjectURL(file);
+            open.href = url;
+            open.target = "_blank";
+            open.rel = "noopener";
+            open.addEventListener("click", () => {
+              setTimeout(() => URL.revokeObjectURL(url), 60000);
+            });
+
+            thumb.appendChild(badge);
+            thumb.appendChild(open);
+          }
+
+          const name = document.createElement("div");
+          name.className = "file-name";
+          name.textContent = file.name;
+
+          const meta = document.createElement("div");
+          meta.className = "file-meta";
+          meta.textContent = `${file.type || "arquivo"} - ${formatSize(file.size)}`;
+
+          card.appendChild(thumb);
+          card.appendChild(name);
+          card.appendChild(meta);
+          previews.appendChild(card);
+        });
+      };
+
+      input.addEventListener("change", () => {
+        const files = Array.from(input.files || []);
+        renderFiles(files);
+      });
+    })();
+  </script>
 {% endblock %}
