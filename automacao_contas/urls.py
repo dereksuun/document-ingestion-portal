@@ -3,7 +3,7 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.shortcuts import redirect
-from django.urls import include, path
+from django.urls import include, path, reverse_lazy
 
 
 def root_redirect(request):
@@ -21,7 +21,7 @@ urlpatterns = [
         ),
         name="login",
     ),
-    path("logout/", auth_views.LogoutView.as_view(), name="logout"),
+    path("logout/", auth_views.LogoutView.as_view(next_page=reverse_lazy("login")), name="logout"),
     path("documents/", include("documents.urls")),
 ]
 

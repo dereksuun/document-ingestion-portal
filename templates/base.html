@@ -47,7 +47,10 @@
             <a href="{% url 'documents_list' %}">Documentos</a>
             <a href="{% url 'upload_documents' %}">Upload</a>
             <a href="{% url 'extraction_settings' %}">Configuracoes</a>
-            <a href="{% url 'logout' %}">Sair</a>
+            <form method="post" action="{% url 'logout' %}" class="nav-logout">
+              {% csrf_token %}
+              <button type="submit" class="nav-link-button">Sair</button>
+            </form>
           {% else %}
             <a href="{% url 'login' %}">Entrar</a>
           {% endif %}
