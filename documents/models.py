@@ -1,3 +1,5 @@
+import re
+import unicodedata
 import uuid
 
 from django.contrib.auth import get_user_model
@@ -21,6 +23,32 @@ class ExtractionProfile(models.Model):
 
     def __str__(self):
         return f"ExtractionProfile({self.owner_id})"
+
+
+def _normalize_keyword(value: str) -> str:
+    raw = (value or "").strip().lower()
+    normalized = unicodedata.normalize("NFKD", raw)
+    stripped = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    cleaned = re.sub(r"\s+", " ", stripped)
+    return cleaned
+
+
+class ExtractionKeyword(models.Model):
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="extraction_keywords")
+    label = models.CharField(max_length=120)
+    normalized_label = models.CharField(max_length=160, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("owner", "normalized_label")
+        ordering = ["label"]
+
+    def save(self, *args, **kwargs):
+        self.normalized_label = _normalize_keyword(self.label)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"ExtractionKeyword({self.owner_id}, {self.label})"
 
 
 class Document(models.Model):

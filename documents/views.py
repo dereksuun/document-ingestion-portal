@@ -11,14 +11,41 @@ from django.http import FileResponse, HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.text import get_valid_filename
 
-from .forms import ExtractionSettingsForm, MultiUploadForm
-from .models import Document, DocumentStatus, ExtractionProfile
-from .services import process_document
+from .extractors import FIELD_CHOICES
+from .forms import ExtractionSettingsForm, KeywordForm, MultiUploadForm
+from .models import Document, DocumentStatus, ExtractionKeyword, ExtractionProfile, _normalize_keyword
+from .services import KEYWORD_PREFIX, process_document
 
 PAGE_SIZE = 10
 MAX_BULK = 25
 
 logger = logging.getLogger(__name__)
+
+
+def _build_field_choices(user):
+    keywords = ExtractionKeyword.objects.filter(owner=user).order_by("label")
+    keyword_choices = [(f"{KEYWORD_PREFIX}{keyword.id}", keyword.label) for keyword in keywords]
+    return FIELD_CHOICES + keyword_choices
+
+
+def _filter_enabled_fields(choices, enabled_fields):
+    allowed = {value for value, _ in choices}
+    return [value for value in (enabled_fields or []) if value in allowed]
+
+
+def _get_keyword_map(owner, selected_fields):
+    keyword_ids = []
+    for field in selected_fields or []:
+        if not field.startswith(KEYWORD_PREFIX):
+            continue
+        raw_id = field.split(":", 1)[1]
+        if not raw_id.isdigit():
+            continue
+        keyword_ids.append(int(raw_id))
+    if not keyword_ids:
+        return {}
+    keywords = ExtractionKeyword.objects.filter(owner=owner, id__in=keyword_ids)
+    return {f"{KEYWORD_PREFIX}{keyword.id}": keyword.label for keyword in keywords}
 
 
 def _get_profile(user):
@@ -38,6 +65,8 @@ def upload_documents(request):
             filenames = [file_obj.name for file_obj in files]
             profile = _get_profile(request.user)
             selected_fields = list(profile.enabled_fields or [])
+            keyword_map = _get_keyword_map(request.user, selected_fields)
+            created_docs = []
             logger.info(
                 "upload_documents user=%s count=%s files=%s",
                 request.user.id,
@@ -46,11 +75,29 @@ def upload_documents(request):
             )
             with transaction.atomic():
                 for file_obj in files:
-                    Document.objects.create(
+                    doc = Document.objects.create(
                         owner=request.user,
                         file=file_obj,
                         original_filename=file_obj.name,
                         selected_fields=selected_fields,
+                    )
+                    created_docs.append(doc)
+            for doc in created_docs:
+                logger.info("process_start doc=%s file=%s action=auto", doc.id, doc.original_filename)
+                doc.mark_processing()
+                doc.save(update_fields=["status", "processed_at", "error_message", "extracted_json"])
+                try:
+                    data = process_document(doc.file.path, doc.selected_fields or [], keyword_map=keyword_map)
+                    doc.mark_done(data)
+                    doc.save()
+                    logger.info("process_done doc=%s file=%s action=auto", doc.id, doc.original_filename)
+                except Exception as exc:
+                    doc.mark_failed(str(exc))
+                    doc.save(update_fields=["status", "processed_at", "error_message"])
+                    logger.exception(
+                        "process_failed doc=%s file=%s action=auto",
+                        doc.id,
+                        doc.original_filename,
                     )
             return redirect("documents_list")
     else:
@@ -73,18 +120,86 @@ def documents_list(request):
 @login_required
 def extraction_settings(request):
     profile = _get_profile(request.user)
+    choices = _build_field_choices(request.user)
+    current_fields = _filter_enabled_fields(choices, profile.enabled_fields)
     if request.method == "POST":
-        form = ExtractionSettingsForm(request.POST)
-        if form.is_valid():
+        form = ExtractionSettingsForm(request.POST, choices=choices)
+        keyword_form = KeywordForm(request.POST)
+        action = request.POST.get("action", "save")
+        if action == "add_keyword" and keyword_form.is_valid():
+            keyword_value = keyword_form.cleaned_data.get("new_keyword") or ""
+            normalized = _normalize_keyword(keyword_value)
+            if not keyword_value:
+                keyword_form.add_error("new_keyword", "Informe uma palavra-chave.")
+            elif normalized in {"", None}:
+                keyword_form.add_error("new_keyword", "Informe uma palavra-chave valida.")
+            elif ExtractionKeyword.objects.filter(
+                owner=request.user, normalized_label=normalized
+            ).exists():
+                keyword_form.add_error("new_keyword", "Essa palavra-chave ja existe.")
+            else:
+                keyword = ExtractionKeyword.objects.create(owner=request.user, label=keyword_value)
+                enabled_fields = (
+                    form.cleaned_data["enabled_fields"] if form.is_valid() else current_fields
+                )
+                enabled_fields = list(enabled_fields)
+                enabled_fields.append(f"{KEYWORD_PREFIX}{keyword.id}")
+                profile.enabled_fields = enabled_fields
+                profile.save(update_fields=["enabled_fields", "updated_at"])
+                logger.info(
+                    "extraction_keyword_add user=%s keyword=%s",
+                    request.user.id,
+                    keyword.label,
+                )
+                return redirect("extraction_settings")
+
+        if action != "add_keyword" and form.is_valid():
             enabled_fields = form.cleaned_data["enabled_fields"]
             profile.enabled_fields = enabled_fields
             profile.save(update_fields=["enabled_fields", "updated_at"])
             logger.info("extraction_profile_update user=%s fields=%s", request.user.id, enabled_fields)
             return redirect("extraction_settings")
     else:
-        form = ExtractionSettingsForm(initial={"enabled_fields": profile.enabled_fields})
+        form = ExtractionSettingsForm(initial={"enabled_fields": current_fields}, choices=choices)
+        keyword_form = KeywordForm()
 
-    return render(request, "documents/settings.html", {"form": form})
+    return render(
+        request,
+        "documents/settings.html",
+        {
+            "form": form,
+            "keyword_form": keyword_form,
+            "keywords": ExtractionKeyword.objects.filter(owner=request.user).order_by("label"),
+        },
+    )
+
+
+@login_required
+def delete_keyword(request, keyword_id):
+    if not request.user.is_staff:
+        return HttpResponseForbidden("Sem permissao.")
+    if request.method != "POST":
+        return HttpResponseForbidden("Metodo invalido.")
+
+    keyword = get_object_or_404(ExtractionKeyword, id=keyword_id, owner=request.user)
+    keyword_label = keyword.label
+    field_key = f"{KEYWORD_PREFIX}{keyword.id}"
+
+    profile = _get_profile(request.user)
+    if field_key in (profile.enabled_fields or []):
+        profile.enabled_fields = [value for value in profile.enabled_fields if value != field_key]
+        profile.save(update_fields=["enabled_fields", "updated_at"])
+
+    for doc in Document.objects.filter(owner=request.user).iterator():
+        selected = doc.selected_fields or []
+        if field_key not in selected:
+            continue
+        doc.selected_fields = [value for value in selected if value != field_key]
+        doc.save(update_fields=["selected_fields"])
+
+    keyword.delete()
+    logger.info("extraction_keyword_delete user=%s keyword=%s", request.user.id, keyword_label)
+    return redirect("extraction_settings")
 
 
 @login_required
@@ -106,7 +221,8 @@ def process_document_view(request, doc_id):
     doc.save(update_fields=["status", "processed_at", "error_message", "extracted_json"])
 
     try:
-        data = process_document(doc.file.path, doc.selected_fields or [])
+        keyword_map = _get_keyword_map(request.user, doc.selected_fields or [])
+        data = process_document(doc.file.path, doc.selected_fields or [], keyword_map=keyword_map)
         doc.mark_done(data)
         doc.save()
         logger.info("process_done doc=%s file=%s action=%s", doc.id, doc.original_filename, action)
@@ -140,12 +256,16 @@ def process_documents_bulk(request):
 
     docs = list(qs)
     logger.info("bulk_process_start user=%s action=%s count=%s", request.user.id, action, len(docs))
+    keyword_fields = []
+    for doc in docs:
+        keyword_fields.extend(doc.selected_fields or [])
+    keyword_map = _get_keyword_map(request.user, keyword_fields)
 
     for doc in docs:
         doc.mark_processing()
         doc.save(update_fields=["status", "processed_at", "error_message", "extracted_json"])
         try:
-            data = process_document(doc.file.path, doc.selected_fields or [])
+            data = process_document(doc.file.path, doc.selected_fields or [], keyword_map=keyword_map)
             doc.mark_done(data)
             doc.save()
             logger.info("process_done doc=%s file=%s", doc.id, doc.original_filename)
@@ -155,42 +275,6 @@ def process_documents_bulk(request):
             logger.exception("process_failed doc=%s file=%s", doc.id, doc.original_filename)
 
     logger.info("bulk_process_end user=%s action=%s count=%s", request.user.id, action, len(docs))
-    return redirect("documents_list")
-
-
-@login_required
-def process_documents_pending(request):
-    if request.method != "POST":
-        return HttpResponseForbidden("Método inválido.")
-
-    qs = (
-        Document.objects.filter(
-            owner=request.user,
-            status__in=[DocumentStatus.PENDING, DocumentStatus.FAILED],
-        )
-        .exclude(status=DocumentStatus.PROCESSING)
-        .order_by("-uploaded_at")[:MAX_BULK]
-    )
-    docs = list(qs)
-    if not docs:
-        return redirect("documents_list")
-
-    logger.info("pending_process_start user=%s count=%s", request.user.id, len(docs))
-
-    for doc in docs:
-        doc.mark_processing()
-        doc.save(update_fields=["status", "processed_at", "error_message", "extracted_json"])
-        try:
-            data = process_document(doc.file.path, doc.selected_fields or [])
-            doc.mark_done(data)
-            doc.save()
-            logger.info("process_done doc=%s file=%s action=pending", doc.id, doc.original_filename)
-        except Exception as exc:
-            doc.mark_failed(str(exc))
-            doc.save(update_fields=["status", "processed_at", "error_message"])
-            logger.exception("process_failed doc=%s file=%s action=pending", doc.id, doc.original_filename)
-
-    logger.info("pending_process_end user=%s count=%s", request.user.id, len(docs))
     return redirect("documents_list")
 
 

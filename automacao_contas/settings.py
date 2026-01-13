@@ -5,7 +5,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = "demo-secret-key-change-me"
 DEBUG = True
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = ["10.0.5.156", "localhost", "127.0.0.1"]
+
 
 INSTALLED_APPS = [
     "django.contrib.admin",

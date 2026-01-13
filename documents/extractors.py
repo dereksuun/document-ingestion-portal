@@ -4,7 +4,13 @@ import unicodedata
 
 logger = logging.getLogger(__name__)
 
-FIELD_CHOICES = [
+BASE_FIELD_CHOICES = [
+    ("due_date", "Data de vencimento"),
+    ("document_value", "Valor do documento"),
+    ("barcode", "Codigo de barras"),
+]
+
+FIELD_CHOICES = BASE_FIELD_CHOICES + [
     ("billing_address", "Endereco de cobranca"),
     ("cnpj", "CNPJ"),
     ("cpf", "CPF"),
@@ -344,3 +350,20 @@ FIELD_EXTRACTORS = {
     "document_number": extract_document_number,
     "instructions": extract_instructions,
 }
+
+
+def extract_keyword_value(text: str, keyword: str):
+    keyword = (keyword or "").strip()
+    if not keyword:
+        return None
+    folded_keyword = _fold_text(keyword).lower()
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    matches = []
+    for line in lines:
+        folded_line = _fold_text(line).lower()
+        if folded_keyword in folded_line:
+            matches.append(_normalize_space(line))
+    if not matches:
+        return None
+    deduped = list(dict.fromkeys(matches))
+    return " | ".join(deduped)

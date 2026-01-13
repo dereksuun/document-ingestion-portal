@@ -1,7 +1,5 @@
 from django import forms
 
-from .extractors import FIELD_CHOICES
-
 MAX_FILE_SIZE_MB = 20
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
@@ -45,8 +43,33 @@ class MultiUploadForm(forms.Form):
 
 class ExtractionSettingsForm(forms.Form):
     enabled_fields = forms.MultipleChoiceField(
-        choices=FIELD_CHOICES,
         required=False,
         widget=forms.CheckboxSelectMultiple,
         label="Campos opcionais",
     )
+
+    def __init__(self, *args, choices=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if choices is not None:
+            self.fields["enabled_fields"].choices = choices
+
+
+class KeywordForm(forms.Form):
+    new_keyword = forms.CharField(
+        required=False,
+        max_length=120,
+        label="Adicionar palavra-chave",
+        widget=forms.TextInput(
+            attrs={
+                "class": "input-text",
+                "placeholder": "Adicionar palavra-chave",
+                "autocomplete": "off",
+            }
+        ),
+    )
+
+    def clean_new_keyword(self):
+        value = (self.cleaned_data.get("new_keyword") or "").strip()
+        if not value:
+            return ""
+        return " ".join(value.split())

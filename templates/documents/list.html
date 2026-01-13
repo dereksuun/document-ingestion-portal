@@ -6,7 +6,6 @@
   <div class="card">
     <div class="page-header">
       <h1>Documentos</h1>
-      <a class="btn btn-primary" href="{% url 'upload_documents' %}">Novo upload</a>
     </div>
 
     <div class="bulk-actions">
@@ -14,10 +13,6 @@
         {% csrf_token %}
         <button class="btn btn-secondary btn-sm" name="action" value="reprocess" type="submit">Reprocessar selecionados</button>
         <button class="btn btn-ghost btn-sm" type="submit" formaction="{% url 'download_documents_json_bulk' %}">Download JSON selecionados</button>
-      </form>
-      <form method="post" action="{% url 'process_documents_pending' %}" class="bulk-form">
-        {% csrf_token %}
-        <button class="btn btn-ghost btn-sm" type="submit">Processar pendentes</button>
       </form>
       <button class="btn btn-ghost btn-sm" type="button" id="select-all">Selecionar todos</button>
     </div>
@@ -95,12 +90,7 @@
               </td>
               <td>
                 <div class="actions">
-                  {% if d.status == "PENDING" or d.status == "FAILED" %}
-                    <form method="post" action="{% url 'process_document' d.id %}" class="inline-form">
-                      {% csrf_token %}
-                      <button type="submit" class="btn btn-primary btn-sm">Processar</button>
-                    </form>
-                  {% elif d.status == "DONE" %}
+                  {% if d.status == "DONE" %}
                     <form method="post" action="{% url 'process_document' d.id %}" class="inline-form">
                       {% csrf_token %}
                       <input type="hidden" name="reprocess" value="1" />

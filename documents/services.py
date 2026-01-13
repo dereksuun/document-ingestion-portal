@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 
 from pypdf import PdfReader
 
-from .extractors import FIELD_EXTRACTORS
+from .extractors import FIELD_EXTRACTORS, extract_keyword_value
 
 try:
     from pdf2image import convert_from_path
@@ -39,6 +39,8 @@ MULTA_LABEL_RE = re.compile(r"(?i)(multa)\D{0,20}([0-9\.]+,[0-9]{2})")
 
 logger = logging.getLogger(__name__)
 
+KEYWORD_PREFIX = "keyword:"
+CORE_FIELD_KEYS = {"due_date", "document_value", "barcode"}
 
 def _log_field_result(field: str, value):
     if value is None or value == "":
@@ -226,19 +228,56 @@ def _extract_core(text: str) -> dict:
     }
 
 
-def process_document(file_path: str, selected_fields=None) -> dict:
+def process_document(file_path: str, selected_fields=None, keyword_map=None) -> dict:
     if not file_path.lower().endswith(".pdf"):
         raise ValueError("Suporta apenas PDF.")
 
     if selected_fields is None:
         selected_fields = []
     selected_fields = list(dict.fromkeys(selected_fields))
+    keyword_map = keyword_map or {}
 
     text = extract_text_from_pdf(file_path)
-    result = _extract_core(text)
+    result = {
+        "document_type": "boleto",
+        "raw_text_excerpt": text[:1200],
+    }
 
     missing_fields = []
+    core = None
+    if any(field in CORE_FIELD_KEYS for field in selected_fields):
+        core = _extract_core(text)
+
+    if "due_date" in selected_fields:
+        due_date = core["dates"].get("vencimento") if core else None
+        if due_date:
+            result.setdefault("dates", {})["vencimento"] = due_date
+        else:
+            missing_fields.append("due_date")
+        _log_field_result("due_date", due_date)
+
+    if "document_value" in selected_fields:
+        value = core["amounts"].get("valor_documento") if core else None
+        if value:
+            result.setdefault("amounts", {})["valor_documento"] = value
+        else:
+            missing_fields.append("document_value")
+        _log_field_result("document_value", value)
+
+    if "barcode" in selected_fields:
+        barcode = core.get("barcode") if core else None
+        if barcode and (barcode.get("linha_digitavel") or barcode.get("codigo_barras")):
+            result["barcode"] = barcode
+        else:
+            missing_fields.append("barcode")
+        _log_field_result(
+            "barcode",
+            (barcode or {}).get("codigo_barras") or (barcode or {}).get("linha_digitavel"),
+        )
+
     for field in selected_fields:
+        if field in CORE_FIELD_KEYS or field.startswith(KEYWORD_PREFIX):
+            continue
         extractor = FIELD_EXTRACTORS.get(field)
         if not extractor:
             continue
@@ -249,6 +288,26 @@ def process_document(file_path: str, selected_fields=None) -> dict:
             continue
         result.update(piece)
         _log_field_result(field, piece.get(field))
+
+    custom_fields = {}
+    for field in selected_fields:
+        if not field.startswith(KEYWORD_PREFIX):
+            continue
+        keyword_label = keyword_map.get(field)
+        if not keyword_label:
+            missing_fields.append(field)
+            _log_field_result(field, None)
+            continue
+        value = extract_keyword_value(text, keyword_label)
+        if value:
+            custom_fields[keyword_label] = value
+            _log_field_result(keyword_label, value)
+        else:
+            missing_fields.append(field)
+            _log_field_result(keyword_label, None)
+
+    if custom_fields:
+        result["custom_fields"] = custom_fields
 
     result["extraction"] = {
         "selected_fields": selected_fields,
