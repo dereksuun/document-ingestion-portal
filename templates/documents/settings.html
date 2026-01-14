@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block title %}Configuracoes{% endblock %}
+
+{% block content %}
+  <div class="card">
+    <div class="page-header">
+      <div>
+        <h1>Configuracoes de extracao</h1>
+        <p class="help-text">Selecione os campos e palavras-chave que devem ser extraidos em novos uploads.</p>
+        <p class="help-text">Nenhuma opcao e obrigatoria; voce pode desmarcar tudo.</p>
+      </div>
+      <a class="btn btn-ghost" href="{% url 'documents_list' %}">Voltar</a>
+    </div>
+
+    <form method="post" class="settings-form">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <div class="settings-toolbar">
+        <div class="search-field">
+          <label for="keyword-search">Buscar</label>
+          <input id="keyword-search" class="input-text" type="search" placeholder="Buscar campo ou palavra" />
+        </div>
+        <div class="filter-field">
+          <label for="keyword-filter">Filtro</label>
+          <select id="keyword-filter" class="input-select">
+            <option value="all">Todas</option>
+            <option value="active">Ativas</option>
+            <option value="inactive">Inativas</option>
+          </select>
+        </div>
+      </div>
+      <div class="settings-grid">
+        {% for checkbox in form.enabled_fields %}
+          <label class="check-item">
+            {{ checkbox.tag }}
+            <span>{{ checkbox.choice_label }}</span>
+          </label>
+        {% endfor %}
+      </div>
+
+      <div class="keyword-add">
+        {{ keyword_form.new_keyword.label_tag }}
+        <div class="keyword-add-row">
+          {{ keyword_form.new_keyword }}
+          <datalist id="field-suggestions">
+            {% for field in fields %}
+              <option value="{{ field.label }}"></option>
+            {% endfor %}
+          </datalist>
+          <button class="btn btn-secondary" type="submit" name="action" value="add_keyword">Adicionar</button>
+        </div>
+        <p class="help-text">Pode ser qualquer palavra; se existir um extrator, ele sera usado.</p>
+        {% if keyword_form.new_keyword.errors %}
+          <p class="error-hint">{{ keyword_form.new_keyword.errors|striptags }}</p>
+        {% endif %}
+      </div>
+
+      <button class="btn btn-primary" type="submit" name="action" value="save">Salvar configuracoes</button>
+    </form>
+
+    {% if user.is_staff %}
+      <div class="keyword-admin">
+        <h2>Palavras adicionadas</h2>
+        {% if keywords %}
+          <div class="keyword-admin-list">
+            {% for keyword in keywords %}
+              <div class="keyword-admin-item">
+                <span>{{ keyword.label }}</span>
+                <form method="post" action="{% url 'delete_keyword' keyword.id %}">
+                  {% csrf_token %}
+                  <button class="btn btn-ghost btn-sm" type="submit">Remover</button>
+                </form>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="help-text">Nenhuma palavra cadastrada.</p>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  <script>
+    (function () {
+      const searchInput = document.getElementById("keyword-search");
+      const filterSelect = document.getElementById("keyword-filter");
+      const items = Array.from(document.querySelectorAll(".check-item"));
+      if (!searchInput || !filterSelect || items.length === 0) {
+        return;
+      }
+
+      const normalize = (value) =>
+        (value || "")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
+
+      const applyFilters = () => {
+        const query = normalize(searchInput.value);
+        const mode = filterSelect.value;
+        items.forEach((item) => {
+          const label = item.querySelector("span");
+          const text = normalize(label ? label.textContent : item.textContent);
+          const input = item.querySelector("input");
+          const checked = input ? input.checked : false;
+          const matchesQuery = !query || text.includes(query);
+          const matchesFilter =
+            mode === "all" || (mode === "active" ? checked : !checked);
+          item.style.display = matchesQuery && matchesFilter ? "" : "none";
+        });
+      };
+
+      searchInput.addEventListener("input", applyFilters);
+      filterSelect.addEventListener("change", applyFilters);
+      items.forEach((item) => {
+        const input = item.querySelector("input");
+        if (input) {
+          input.addEventListener("change", applyFilters);
+        }
+      });
+
+      applyFilters();
+    })();
+  </script>
+{% endblock %}

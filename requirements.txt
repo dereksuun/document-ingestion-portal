@@ -1,2 +1,4 @@
 Django>=4.2
 pypdf>=4.0
+pdf2image>=1.17
+pytesseract>=0.3
