@@ -25,6 +25,18 @@ class ExtractionProfile(models.Model):
         return f"ExtractionProfile({self.owner_id})"
 
 
+class ExtractionField(models.Model):
+    key = models.CharField(max_length=64, unique=True)
+    label = models.CharField(max_length=120)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["label"]
+
+    def __str__(self):
+        return f"ExtractionField({self.key})"
+
+
 def _normalize_keyword(value: str) -> str:
     raw = (value or "").strip().lower()
     normalized = unicodedata.normalize("NFKD", raw)
@@ -36,6 +48,7 @@ def _normalize_keyword(value: str) -> str:
 class ExtractionKeyword(models.Model):
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="extraction_keywords")
     label = models.CharField(max_length=120)
+    field_key = models.CharField(max_length=64, blank=True, default="")
     normalized_label = models.CharField(max_length=160, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

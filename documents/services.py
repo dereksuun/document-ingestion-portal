@@ -40,7 +40,7 @@ MULTA_LABEL_RE = re.compile(r"(?i)(multa)\D{0,20}([0-9\.]+,[0-9]{2})")
 logger = logging.getLogger(__name__)
 
 KEYWORD_PREFIX = "keyword:"
-CORE_FIELD_KEYS = {"due_date", "document_value", "barcode"}
+CORE_FIELD_KEYS = {"due_date", "document_value", "barcode", "juros", "multa"}
 
 def _log_field_result(field: str, value):
     if value is None or value == "":
@@ -244,11 +244,31 @@ def process_document(file_path: str, selected_fields=None, keyword_map=None) -> 
     }
 
     missing_fields = []
+    resolved_fields = []
+    keyword_labels = []
+    for field in selected_fields:
+        if field.startswith(KEYWORD_PREFIX):
+            info = keyword_map.get(field)
+            if not info:
+                missing_fields.append(field)
+                _log_field_result(field, None)
+                continue
+            field_key = info.get("field_key")
+            if field_key:
+                resolved_fields.append(field_key)
+            else:
+                keyword_labels.append(info.get("label", ""))
+            continue
+        resolved_fields.append(field)
+    resolved_fields = list(dict.fromkeys(resolved_fields))
+    keyword_labels = [label for label in keyword_labels if label]
+    keyword_labels = list(dict.fromkeys(keyword_labels))
+
     core = None
-    if any(field in CORE_FIELD_KEYS for field in selected_fields):
+    if any(field in CORE_FIELD_KEYS for field in resolved_fields):
         core = _extract_core(text)
 
-    if "due_date" in selected_fields:
+    if "due_date" in resolved_fields:
         due_date = core["dates"].get("vencimento") if core else None
         if due_date:
             result.setdefault("dates", {})["vencimento"] = due_date
@@ -256,7 +276,7 @@ def process_document(file_path: str, selected_fields=None, keyword_map=None) -> 
             missing_fields.append("due_date")
         _log_field_result("due_date", due_date)
 
-    if "document_value" in selected_fields:
+    if "document_value" in resolved_fields:
         value = core["amounts"].get("valor_documento") if core else None
         if value:
             result.setdefault("amounts", {})["valor_documento"] = value
@@ -264,7 +284,7 @@ def process_document(file_path: str, selected_fields=None, keyword_map=None) -> 
             missing_fields.append("document_value")
         _log_field_result("document_value", value)
 
-    if "barcode" in selected_fields:
+    if "barcode" in resolved_fields:
         barcode = core.get("barcode") if core else None
         if barcode and (barcode.get("linha_digitavel") or barcode.get("codigo_barras")):
             result["barcode"] = barcode
@@ -275,11 +295,29 @@ def process_document(file_path: str, selected_fields=None, keyword_map=None) -> 
             (barcode or {}).get("codigo_barras") or (barcode or {}).get("linha_digitavel"),
         )
 
-    for field in selected_fields:
-        if field in CORE_FIELD_KEYS or field.startswith(KEYWORD_PREFIX):
+    if "juros" in resolved_fields:
+        juros = core["amounts"].get("juros") if core else None
+        if juros:
+            result.setdefault("amounts", {})["juros"] = juros
+        else:
+            missing_fields.append("juros")
+        _log_field_result("juros", juros)
+
+    if "multa" in resolved_fields:
+        multa = core["amounts"].get("multa") if core else None
+        if multa:
+            result.setdefault("amounts", {})["multa"] = multa
+        else:
+            missing_fields.append("multa")
+        _log_field_result("multa", multa)
+
+    for field in resolved_fields:
+        if field in CORE_FIELD_KEYS:
             continue
         extractor = FIELD_EXTRACTORS.get(field)
         if not extractor:
+            missing_fields.append(field)
+            _log_field_result(field, None)
             continue
         piece = extractor(text)
         if not piece:
@@ -290,27 +328,20 @@ def process_document(file_path: str, selected_fields=None, keyword_map=None) -> 
         _log_field_result(field, piece.get(field))
 
     custom_fields = {}
-    for field in selected_fields:
-        if not field.startswith(KEYWORD_PREFIX):
-            continue
-        keyword_label = keyword_map.get(field)
-        if not keyword_label:
-            missing_fields.append(field)
-            _log_field_result(field, None)
-            continue
-        value = extract_keyword_value(text, keyword_label)
+    for label in keyword_labels:
+        value = extract_keyword_value(text, label)
         if value:
-            custom_fields[keyword_label] = value
-            _log_field_result(keyword_label, value)
+            custom_fields[label] = value
+            _log_field_result(label, value)
         else:
-            missing_fields.append(field)
-            _log_field_result(keyword_label, None)
+            missing_fields.append(label)
+            _log_field_result(label, None)
 
     if custom_fields:
         result["custom_fields"] = custom_fields
 
     result["extraction"] = {
-        "selected_fields": selected_fields,
+        "selected_fields": list(dict.fromkeys(resolved_fields + keyword_labels)),
         "missing_fields": missing_fields,
     }
     return result

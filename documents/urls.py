@@ -5,6 +5,7 @@ from . import views
 urlpatterns = [
     path("upload/", views.upload_documents, name="upload_documents"),
     path("", views.documents_list, name="documents_list"),
+    path("payments/", views.payments_view, name="payments"),
     path("settings/extraction/", views.extraction_settings, name="extraction_settings"),
     path("settings/extraction/keywords/<int:keyword_id>/delete/", views.delete_keyword, name="delete_keyword"),
     path("process/<uuid:doc_id>/", views.process_document_view, name="process_document"),

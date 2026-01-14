@@ -11,9 +11,15 @@ from django.http import FileResponse, HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.text import get_valid_filename
 
-from .extractors import FIELD_CHOICES
 from .forms import ExtractionSettingsForm, KeywordForm, MultiUploadForm
-from .models import Document, DocumentStatus, ExtractionKeyword, ExtractionProfile, _normalize_keyword
+from .models import (
+    Document,
+    DocumentStatus,
+    ExtractionField,
+    ExtractionKeyword,
+    ExtractionProfile,
+    _normalize_keyword,
+)
 from .services import KEYWORD_PREFIX, process_document
 
 PAGE_SIZE = 10
@@ -23,9 +29,11 @@ logger = logging.getLogger(__name__)
 
 
 def _build_field_choices(user):
+    fields = ExtractionField.objects.order_by("label")
+    field_choices = [(field.key, field.label) for field in fields]
     keywords = ExtractionKeyword.objects.filter(owner=user).order_by("label")
     keyword_choices = [(f"{KEYWORD_PREFIX}{keyword.id}", keyword.label) for keyword in keywords]
-    return FIELD_CHOICES + keyword_choices
+    return field_choices + keyword_choices
 
 
 def _filter_enabled_fields(choices, enabled_fields):
@@ -45,7 +53,38 @@ def _get_keyword_map(owner, selected_fields):
     if not keyword_ids:
         return {}
     keywords = ExtractionKeyword.objects.filter(owner=owner, id__in=keyword_ids)
-    return {f"{KEYWORD_PREFIX}{keyword.id}": keyword.label for keyword in keywords}
+    mapping = {}
+    for keyword in keywords:
+        mapping[f"{KEYWORD_PREFIX}{keyword.id}"] = {
+            "label": keyword.label,
+            "field_key": keyword.field_key,
+        }
+    return mapping
+
+
+FIELD_ALIASES = {
+    "vencimento": "due_date",
+    "data de vencimento": "due_date",
+    "valor": "document_value",
+    "valor do documento": "document_value",
+    "codigo de barras": "barcode",
+    "linha digitavel": "barcode",
+    "local de cobranca": "billing_address",
+    "endereco de cobranca": "billing_address",
+    "juros": "juros",
+    "multa": "multa",
+}
+
+
+def _resolve_field_key(label):
+    normalized = _normalize_keyword(label)
+    if not normalized:
+        return "", ""
+    fields = ExtractionField.objects.all()
+    for field in fields:
+        if normalized == _normalize_keyword(field.key) or normalized == _normalize_keyword(field.label):
+            return field.key, field.label
+    return FIELD_ALIASES.get(normalized, ""), ""
 
 
 def _get_profile(user):
@@ -64,7 +103,11 @@ def upload_documents(request):
             files = form.cleaned_data["files"]
             filenames = [file_obj.name for file_obj in files]
             profile = _get_profile(request.user)
-            selected_fields = list(profile.enabled_fields or [])
+            choices = _build_field_choices(request.user)
+            selected_fields = _filter_enabled_fields(choices, profile.enabled_fields)
+            if selected_fields != (profile.enabled_fields or []):
+                profile.enabled_fields = selected_fields
+                profile.save(update_fields=["enabled_fields", "updated_at"])
             keyword_map = _get_keyword_map(request.user, selected_fields)
             created_docs = []
             logger.info(
@@ -118,6 +161,11 @@ def documents_list(request):
 
 
 @login_required
+def payments_view(request):
+    return render(request, "payments.html")
+
+
+@login_required
 def extraction_settings(request):
     profile = _get_profile(request.user)
     choices = _build_field_choices(request.user)
@@ -129,16 +177,32 @@ def extraction_settings(request):
         if action == "add_keyword" and keyword_form.is_valid():
             keyword_value = keyword_form.cleaned_data.get("new_keyword") or ""
             normalized = _normalize_keyword(keyword_value)
+            field_key, matched_label = _resolve_field_key(keyword_value)
+            matches_field = bool(matched_label) and normalized == _normalize_keyword(matched_label)
             if not keyword_value:
                 keyword_form.add_error("new_keyword", "Informe uma palavra-chave.")
             elif normalized in {"", None}:
                 keyword_form.add_error("new_keyword", "Informe uma palavra-chave valida.")
+            elif matches_field:
+                enabled_fields = (
+                    form.cleaned_data["enabled_fields"] if form.is_valid() else current_fields
+                )
+                enabled_fields = list(enabled_fields)
+                if field_key not in enabled_fields:
+                    enabled_fields.append(field_key)
+                    profile.enabled_fields = enabled_fields
+                    profile.save(update_fields=["enabled_fields", "updated_at"])
+                return redirect("extraction_settings")
             elif ExtractionKeyword.objects.filter(
                 owner=request.user, normalized_label=normalized
             ).exists():
                 keyword_form.add_error("new_keyword", "Essa palavra-chave ja existe.")
             else:
-                keyword = ExtractionKeyword.objects.create(owner=request.user, label=keyword_value)
+                keyword = ExtractionKeyword.objects.create(
+                    owner=request.user,
+                    label=keyword_value,
+                    field_key=field_key,
+                )
                 enabled_fields = (
                     form.cleaned_data["enabled_fields"] if form.is_valid() else current_fields
                 )
@@ -170,6 +234,7 @@ def extraction_settings(request):
             "form": form,
             "keyword_form": keyword_form,
             "keywords": ExtractionKeyword.objects.filter(owner=request.user).order_by("label"),
+            "fields": ExtractionField.objects.order_by("label"),
         },
     )
 
@@ -183,18 +248,18 @@ def delete_keyword(request, keyword_id):
 
     keyword = get_object_or_404(ExtractionKeyword, id=keyword_id, owner=request.user)
     keyword_label = keyword.label
-    field_key = f"{KEYWORD_PREFIX}{keyword.id}"
+    keyword_key = f"{KEYWORD_PREFIX}{keyword.id}"
 
     profile = _get_profile(request.user)
-    if field_key in (profile.enabled_fields or []):
-        profile.enabled_fields = [value for value in profile.enabled_fields if value != field_key]
+    if keyword_key in (profile.enabled_fields or []):
+        profile.enabled_fields = [value for value in profile.enabled_fields if value != keyword_key]
         profile.save(update_fields=["enabled_fields", "updated_at"])
 
     for doc in Document.objects.filter(owner=request.user).iterator():
         selected = doc.selected_fields or []
-        if field_key not in selected:
+        if keyword_key not in selected:
             continue
-        doc.selected_fields = [value for value in selected if value != field_key]
+        doc.selected_fields = [value for value in selected if value != keyword_key]
         doc.save(update_fields=["selected_fields"])
 
     keyword.delete()

@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}Pagamentos{% endblock %}
+
+{% block content %}
+  <div class="card payments-card">
+    <div class="page-header">
+      <div>
+        <h1>Pagamentos</h1>
+        <p class="help-text">
+          Escolha a forma de pagamento para comprar creditos.
+        </p>
+      </div>
+    </div>
+
+    <div class="payment-tabs" role="tablist" aria-label="Metodos de pagamento">
+      <button class="tab-btn is-active" type="button" data-method="card">Cartao</button>
+      <button class="tab-btn" type="button" data-method="pix">Pix</button>
+      <button class="tab-btn" type="button" data-method="boleto">Boleto</button>
+    </div>
+
+    <form class="payment-form" method="post" action="#">
+      {% csrf_token %}
+      <input type="hidden" name="payment_method" id="payment-method" value="card" />
+
+      <div class="payment-panel is-active" data-method="card">
+        <div class="form-grid">
+          <label class="form-field">
+            <span>CPF</span>
+            <input class="input-text" type="text" name="cpf" placeholder="000.000.000-00" />
+          </label>
+          <label class="form-field">
+            <span>Data de nascimento</span>
+            <input class="input-text" type="date" name="birth_date" />
+          </label>
+          <label class="form-field">
+            <span>CEP</span>
+            <input class="input-text" type="text" name="cep" placeholder="00000-000" />
+          </label>
+          <label class="form-field">
+            <span>Nome no cartao</span>
+            <input class="input-text" type="text" name="card_name" placeholder="Nome como no cartao" />
+          </label>
+          <label class="form-field">
+            <span>Numero do cartao</span>
+            <input class="input-text" type="text" name="card_number" placeholder="0000 0000 0000 0000" />
+          </label>
+          <label class="form-field">
+            <span>Validade</span>
+            <input class="input-text" type="text" name="card_expiry" placeholder="MM/AA" />
+          </label>
+          <label class="form-field">
+            <span>CVV</span>
+            <input class="input-text" type="text" name="card_cvv" placeholder="123" />
+          </label>
+        </div>
+      </div>
+
+      <div class="payment-panel" data-method="pix">
+        <div class="form-grid">
+          <label class="form-field">
+            <span>CPF</span>
+            <input class="input-text" type="text" name="cpf_pix" placeholder="000.000.000-00" />
+          </label>
+          <label class="form-field">
+            <span>Data de nascimento</span>
+            <input class="input-text" type="date" name="birth_date_pix" />
+          </label>
+          <label class="form-field">
+            <span>CEP</span>
+            <input class="input-text" type="text" name="cep_pix" placeholder="00000-000" />
+          </label>
+          <label class="form-field">
+            <span>Nome completo</span>
+            <input class="input-text" type="text" name="full_name_pix" placeholder="Nome completo" />
+          </label>
+        </div>
+        <p class="help-text">O QR Code sera gerado automaticamente apos a integracao.</p>
+      </div>
+
+      <div class="payment-panel" data-method="boleto">
+        <div class="form-grid">
+          <label class="form-field">
+            <span>CPF</span>
+            <input class="input-text" type="text" name="cpf_boleto" placeholder="000.000.000-00" />
+          </label>
+          <label class="form-field">
+            <span>Data de nascimento</span>
+            <input class="input-text" type="date" name="birth_date_boleto" />
+          </label>
+          <label class="form-field">
+            <span>CEP</span>
+            <input class="input-text" type="text" name="cep_boleto" placeholder="00000-000" />
+          </label>
+          <label class="form-field">
+            <span>Nome completo</span>
+            <input class="input-text" type="text" name="full_name_boleto" placeholder="Nome completo" />
+          </label>
+        </div>
+        <p class="help-text">O boleto sera gerado automaticamente apos a integracao.</p>
+      </div>
+
+      <div class="payment-actions">
+        <button class="btn btn-primary" type="button">Continuar</button>
+        <span class="help-text">Funcionalidade de pagamento em breve.</span>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    (function () {
+      const buttons = Array.from(document.querySelectorAll(".tab-btn"));
+      const panels = Array.from(document.querySelectorAll(".payment-panel"));
+      const methodInput = document.getElementById("payment-method");
+      if (buttons.length === 0 || panels.length === 0 || !methodInput) {
+        return;
+      }
+
+      const setActive = (method) => {
+        buttons.forEach((btn) => {
+          btn.classList.toggle("is-active", btn.dataset.method === method);
+        });
+        panels.forEach((panel) => {
+          panel.classList.toggle("is-active", panel.dataset.method === method);
+        });
+        methodInput.value = method;
+      };
+
+      buttons.forEach((btn) => {
+        btn.addEventListener("click", () => setActive(btn.dataset.method));
+      });
+    })();
+  </script>
+{% endblock %}

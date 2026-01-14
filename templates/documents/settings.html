@@ -19,7 +19,7 @@
       <div class="settings-toolbar">
         <div class="search-field">
           <label for="keyword-search">Buscar</label>
-          <input id="keyword-search" class="input-text" type="search" placeholder="Buscar palavra-chave" />
+          <input id="keyword-search" class="input-text" type="search" placeholder="Buscar campo ou palavra" />
         </div>
         <div class="filter-field">
           <label for="keyword-filter">Filtro</label>
@@ -43,8 +43,14 @@
         {{ keyword_form.new_keyword.label_tag }}
         <div class="keyword-add-row">
           {{ keyword_form.new_keyword }}
+          <datalist id="field-suggestions">
+            {% for field in fields %}
+              <option value="{{ field.label }}"></option>
+            {% endfor %}
+          </datalist>
           <button class="btn btn-secondary" type="submit" name="action" value="add_keyword">Adicionar</button>
         </div>
+        <p class="help-text">Pode ser qualquer palavra; se existir um extrator, ele sera usado.</p>
         {% if keyword_form.new_keyword.errors %}
           <p class="error-hint">{{ keyword_form.new_keyword.errors|striptags }}</p>
         {% endif %}
@@ -55,7 +61,7 @@
 
     {% if user.is_staff %}
       <div class="keyword-admin">
-        <h2>Palavras-chave cadastradas</h2>
+        <h2>Palavras adicionadas</h2>
         {% if keywords %}
           <div class="keyword-admin-list">
             {% for keyword in keywords %}
@@ -69,7 +75,7 @@
             {% endfor %}
           </div>
         {% else %}
-          <p class="help-text">Nenhuma palavra-chave cadastrada.</p>
+          <p class="help-text">Nenhuma palavra cadastrada.</p>
         {% endif %}
       </div>
     {% endif %}

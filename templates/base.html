@@ -24,6 +24,7 @@
           {% if user.is_authenticated %}
             <a class="nav-item" href="{% url 'documents_list' %}">Documentos</a>
             <a class="nav-item" href="{% url 'upload_documents' %}">Upload</a>
+            <a class="nav-item" href="{% url 'payments' %}">Pagamentos</a>
             <a class="nav-item" href="{% url 'extraction_settings' %}">Configuracoes</a>
             <form method="post" action="{% url 'logout' %}" class="nav-logout">
               {% csrf_token %}

@@ -62,7 +62,8 @@ class KeywordForm(forms.Form):
         widget=forms.TextInput(
             attrs={
                 "class": "input-text",
-                "placeholder": "Adicionar palavra-chave",
+                "list": "field-suggestions",
+                "placeholder": "Adicionar palavra (ex: Sao Paulo, CNPJ)",
                 "autocomplete": "off",
             }
         ),
