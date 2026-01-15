@@ -19,6 +19,8 @@ from .models import (
     ExtractionField,
     ExtractionKeyword,
     ExtractionProfile,
+    STRATEGY_CHOICES,
+    VALUE_TYPE_CHOICES,
     _normalize_keyword,
 )
 from .services import KEYWORD_PREFIX, process_document, sanitize_payload
@@ -39,7 +41,8 @@ def _build_field_choices(user):
 
 def _filter_enabled_fields(choices, enabled_fields):
     allowed = {value for value, _ in choices}
-    return [value for value in (enabled_fields or []) if value in allowed]
+    filtered = [value for value in (enabled_fields or []) if value in allowed]
+    return list(dict.fromkeys(filtered))
 
 
 def _get_keyword_map(owner, selected_fields):
@@ -61,6 +64,9 @@ def _get_keyword_map(owner, selected_fields):
             "resolved_kind": keyword.resolved_kind,
             "field_key": keyword.field_key,
             "inferred_type": keyword.inferred_type,
+            "value_type": keyword.value_type,
+            "strategy": keyword.strategy,
+            "strategy_params": keyword.strategy_params or {},
             "anchors": keyword.anchors or [],
             "match_strategy": keyword.match_strategy,
             "confidence": keyword.confidence,
@@ -151,12 +157,32 @@ def extraction_settings(request):
     profile = _get_profile(request.user)
     choices = _build_field_choices(request.user)
     current_fields = _filter_enabled_fields(choices, profile.enabled_fields)
+    if request.method != "POST":
+        logger.info(
+            "extraction_settings_load user=%s fields=%s",
+            request.user.id,
+            profile.enabled_fields,
+        )
     if request.method == "POST":
         form = ExtractionSettingsForm(request.POST, choices=choices)
         keyword_form = KeywordForm(request.POST)
         action = request.POST.get("action", "save")
+        post_enabled = request.POST.getlist("enabled_fields")
+        logger.info(
+            "extraction_settings_post user=%s action=%s enabled_fields=%s new_keyword=%s value_type=%s strategy=%s params=%s",
+            request.user.id,
+            action,
+            post_enabled,
+            request.POST.get("new_keyword"),
+            request.POST.get("value_type"),
+            request.POST.get("strategy"),
+            request.POST.get("strategy_params"),
+        )
         if action == "add_keyword" and keyword_form.is_valid():
             keyword_value = keyword_form.cleaned_data.get("new_keyword") or ""
+            value_type_raw = keyword_form.cleaned_data.get("value_type") or ""
+            strategy_raw = keyword_form.cleaned_data.get("strategy") or ""
+            strategy_params_raw = keyword_form.cleaned_data.get("strategy_params") or ""
             normalized = _normalize_keyword(keyword_value)
             if not keyword_value:
                 keyword_form.add_error("new_keyword", "Informe uma palavra-chave.")
@@ -170,35 +196,72 @@ def extraction_settings(request):
                 builtin_fields = list(ExtractionField.objects.values_list("key", "label"))
                 intent = resolve_intent(keyword_value, builtin_fields, allow_llm=False)
                 anchors = intent.anchors or [keyword_value.strip()]
+                value_types = {key for key, _ in VALUE_TYPE_CHOICES}
+                strategies = {key for key, _ in STRATEGY_CHOICES}
+                inferred_value_type = (intent.inferred_type or "text").lower()
+                if inferred_value_type == "postal":
+                    inferred_value_type = "address"
+                value_type = (value_type_raw or inferred_value_type).lower()
+                if value_type not in value_types:
+                    value_type = inferred_value_type if inferred_value_type in value_types else "text"
+                if strategy_raw:
+                    strategy = strategy_raw.lower()
+                else:
+                    strategy = "below_n_lines" if value_type == "block" else "after_label"
+                if strategy not in strategies:
+                    strategy = "after_label"
+                try:
+                    strategy_params = json.loads(strategy_params_raw) if strategy_params_raw else {}
+                except json.JSONDecodeError:
+                    strategy_params = {}
+                if not isinstance(strategy_params, dict):
+                    strategy_params = {}
+                if strategy == "below_n_lines" and "max_lines" not in strategy_params:
+                    strategy_params["max_lines"] = 3
                 keyword = ExtractionKeyword.objects.create(
                     owner=request.user,
                     label=keyword_value,
                     field_key=intent.builtin_key if intent.kind == "builtin" else "",
                     resolved_kind=intent.kind,
-                    inferred_type=intent.inferred_type,
+                    inferred_type=value_type,
+                    value_type=value_type,
+                    strategy=strategy,
+                    strategy_params=strategy_params,
                     anchors=anchors,
                     match_strategy=intent.match_strategy,
                     confidence=float(intent.confidence or 0.0),
                 )
-                enabled_fields = (
-                    form.cleaned_data["enabled_fields"] if form.is_valid() else current_fields
-                )
-                enabled_fields = list(enabled_fields)
+                enabled_fields = _filter_enabled_fields(choices, post_enabled)
                 enabled_fields.append(f"{KEYWORD_PREFIX}{keyword.id}")
                 profile.enabled_fields = enabled_fields
                 profile.save(update_fields=["enabled_fields", "updated_at"])
                 logger.info(
-                    "extraction_keyword_add user=%s keyword=%s",
+                    "extraction_keyword_add user=%s keyword=%s kind=%s field_key=%s value_type=%s strategy=%s params=%s",
                     request.user.id,
                     keyword.label,
+                    keyword.resolved_kind,
+                    keyword.field_key,
+                    keyword.value_type,
+                    keyword.strategy,
+                    keyword.strategy_params,
+                )
+                logger.info(
+                    "extraction_settings_save user=%s enabled_fields=%s",
+                    request.user.id,
+                    enabled_fields,
                 )
                 return redirect("extraction_settings")
 
-        if action != "add_keyword" and form.is_valid():
-            enabled_fields = form.cleaned_data["enabled_fields"]
+        if action != "add_keyword":
+            enabled_fields = _filter_enabled_fields(choices, post_enabled)
             profile.enabled_fields = enabled_fields
             profile.save(update_fields=["enabled_fields", "updated_at"])
             logger.info("extraction_profile_update user=%s fields=%s", request.user.id, enabled_fields)
+            logger.info(
+                "extraction_settings_save user=%s enabled_fields=%s",
+                request.user.id,
+                enabled_fields,
+            )
             return redirect("extraction_settings")
     else:
         form = ExtractionSettingsForm(initial={"enabled_fields": current_fields}, choices=choices)

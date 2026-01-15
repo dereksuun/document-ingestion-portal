@@ -70,13 +70,24 @@ class ExtractionFieldAdmin(admin.ModelAdmin):
 
 @admin.register(ExtractionKeyword)
 class ExtractionKeywordAdmin(admin.ModelAdmin):
-    list_display = ("label", "resolved_kind", "field_key", "inferred_type", "owner", "created_at")
-    list_filter = ("created_at",)
+    list_display = (
+        "label",
+        "resolved_kind",
+        "field_key",
+        "inferred_type",
+        "value_type",
+        "strategy",
+        "owner",
+        "created_at",
+    )
+    list_filter = ("created_at", "value_type", "strategy", "resolved_kind")
     search_fields = (
         "label",
         "field_key",
         "resolved_kind",
         "inferred_type",
+        "value_type",
+        "strategy",
         "normalized_label",
         "owner__username",
         "owner__email",

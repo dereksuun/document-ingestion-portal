@@ -1,5 +1,19 @@
 from django import forms
 
+
+VALUE_TYPE_CHOICES = [
+    ("text", "text"),
+    ("money", "money"),
+    ("date", "date"),
+    ("cpf", "cpf"),
+    ("cnpj", "cnpj"),
+    ("id", "id"),
+    ("barcode", "barcode"),
+    ("address", "address"),
+    ("block", "block"),
+]
+
+
 MAX_FILE_SIZE_MB = 20
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
@@ -67,6 +81,26 @@ class KeywordForm(forms.Form):
                 "autocomplete": "off",
             }
         ),
+    )
+    value_type = forms.ChoiceField(
+        required=False,
+        choices=VALUE_TYPE_CHOICES,
+        initial="text",
+        label="Tipo do valor",
+        widget=forms.Select(
+            attrs={
+                "class": "input-select",
+                "aria-label": "Tipo do valor",
+            }
+        ),
+    )
+    strategy = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput,
+    )
+    strategy_params = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput,
     )
 
     def clean_new_keyword(self):

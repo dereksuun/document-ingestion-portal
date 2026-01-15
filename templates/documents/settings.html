@@ -42,7 +42,14 @@
       <div class="keyword-add">
         {{ keyword_form.new_keyword.label_tag }}
         <div class="keyword-add-row">
-          {{ keyword_form.new_keyword }}
+          <div class="keyword-input">
+            {{ keyword_form.new_keyword }}
+          </div>
+          <div class="keyword-type">
+            {{ keyword_form.value_type }}
+          </div>
+          {{ keyword_form.strategy }}
+          {{ keyword_form.strategy_params }}
           <datalist id="field-suggestions">
             {% for field in fields %}
               <option value="{{ field.label }}"></option>
@@ -133,7 +140,8 @@
       }
 
       form.addEventListener("submit", (event) => {
-        if (document.activeElement !== addButton) {
+        const submitter = event.submitter || document.activeElement;
+        if (submitter !== addButton) {
           return;
         }
         const value = (input.value || "").trim();

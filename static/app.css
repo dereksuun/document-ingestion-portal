@@ -357,9 +357,22 @@ a:hover {
   align-items: center;
 }
 
-.keyword-add-row .input-text {
+.keyword-input {
   flex: 1;
   min-width: 220px;
+}
+
+.keyword-type {
+  flex: 0 0 180px;
+  min-width: 180px;
+}
+
+.keyword-add-row .input-text {
+  width: 100%;
+}
+
+.keyword-add-row .input-select {
+  width: 100%;
 }
 
 .keyword-admin {

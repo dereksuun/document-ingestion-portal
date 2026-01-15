@@ -8,6 +8,26 @@ from django.utils import timezone
 
 User = get_user_model()
 
+VALUE_TYPE_CHOICES = [
+    ("text", "Texto"),
+    ("block", "Bloco"),
+    ("money", "Valor"),
+    ("date", "Data"),
+    ("cpf", "CPF"),
+    ("cnpj", "CNPJ"),
+    ("id", "Identificador"),
+    ("barcode", "Codigo de barras"),
+    ("address", "Endereco"),
+]
+
+STRATEGY_CHOICES = [
+    ("after_label", "Depois do rotulo"),
+    ("next_line", "Proxima linha"),
+    ("below_n_lines", "Abaixo de N linhas"),
+    ("regex", "Regex"),
+    ("nearest_match", "Mais proximo"),
+]
+
 
 class DocumentStatus(models.TextChoices):
     PENDING = "PENDING", "Pendente"
@@ -51,6 +71,17 @@ class ExtractionKeyword(models.Model):
     field_key = models.CharField(max_length=64, blank=True, default="")
     resolved_kind = models.CharField(max_length=16, default="custom")
     inferred_type = models.CharField(max_length=32, blank=True, default="")
+    value_type = models.CharField(
+        max_length=24,
+        choices=VALUE_TYPE_CHOICES,
+        default="text",
+    )
+    strategy = models.CharField(
+        max_length=24,
+        choices=STRATEGY_CHOICES,
+        default="after_label",
+    )
+    strategy_params = models.JSONField(default=dict, blank=True)
     anchors = models.JSONField(default=list)
     match_strategy = models.CharField(max_length=24, blank=True, default="")
     confidence = models.FloatField(default=0.0)

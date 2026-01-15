@@ -57,6 +57,7 @@ CONTEXT_LINES_BY_TYPE = {
     "id": 3,
     "text": 4,
     "address": 5,
+    "block": 6,
     "barcode": 2,
     "cpf": 2,
     "cnpj": 2,
@@ -121,6 +122,111 @@ def _collect_anchor_lines(text: str, anchors, context_lines: int):
                     selected.append(lines[idx + offset])
     return list(dict.fromkeys(selected))
 
+
+def _split_lines(text: str) -> list[str]:
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def _find_anchor_indexes(lines, anchors) -> list[int]:
+    anchors = [anchor for anchor in (anchors or []) if anchor]
+    if not anchors:
+        return []
+    norm_anchors = [_normalize_for_match(anchor) for anchor in anchors]
+    indexes = []
+    for idx, line in enumerate(lines):
+        norm_line = _normalize_for_match(line)
+        if any(anchor in norm_line for anchor in norm_anchors):
+            indexes.append(idx)
+    return indexes
+
+
+def _extract_after_label(line: str, anchors):
+    anchors = [anchor for anchor in (anchors or []) if anchor]
+    for anchor in anchors:
+        match = re.search(re.escape(anchor), line, re.IGNORECASE)
+        if not match:
+            continue
+        value = line[match.end():].strip(" :-\t")
+        if value:
+            return value
+    return None
+
+
+def _next_non_empty_line(lines, start_idx: int):
+    for idx in range(start_idx, len(lines)):
+        value = lines[idx].strip()
+        if value:
+            return value
+    return None
+
+
+def _looks_like_section_title(value: str) -> bool:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return False
+    if cleaned.endswith(":"):
+        return True
+    if cleaned.isupper() and len(cleaned) <= 40:
+        return True
+    return False
+
+
+def _extract_block(lines, max_lines: int):
+    if not lines:
+        return None
+    collected = []
+    for line in lines[: max(1, max_lines)]:
+        value = line.strip()
+        if not value:
+            continue
+        if collected and _looks_like_section_title(value):
+            break
+        collected.append(value)
+    if not collected:
+        return None
+    return "\n".join(collected)
+
+
+def _extract_value_from_lines(lines, anchors, value_type: str, max_lines: int | None = None):
+    value_type = (value_type or "text").lower()
+    if value_type in {"money", "amount"}:
+        return _extract_money_from_lines(lines)
+    if value_type == "date":
+        return _extract_date_from_lines(lines)
+    if value_type == "cpf":
+        return extract_cpf("\n".join(lines)).get("cpf")
+    if value_type == "cnpj":
+        return extract_cnpj("\n".join(lines)).get("cnpj")
+    if value_type == "barcode":
+        return _extract_barcode_from_text("\n".join(lines))
+    if value_type == "postal":
+        return _extract_postal_from_lines(lines)
+    if value_type == "id":
+        value = _extract_id_from_lines(lines)
+        if value and _is_noise_value(value, anchors, value_type):
+            return None
+        return value
+    if value_type == "block":
+        return _extract_block(lines, max_lines or _context_lines_for_type(value_type))
+
+    value = _extract_text_from_lines(lines, anchors)
+    if not value:
+        value = _next_non_empty_line(lines, 0)
+    if value and _is_noise_value(value, anchors, value_type):
+        return None
+    return value
+
+
+def _log_custom_attempt(field_key, value_type, strategy, anchors, window_size, found):
+    logger.info(
+        "custom_extract field=%s type=%s strategy=%s anchors=%s window=%s found=%s",
+        field_key,
+        value_type,
+        strategy,
+        anchors,
+        window_size,
+        found,
+    )
 
 def _extract_text_from_lines(lines, anchors):
     anchors = [anchor for anchor in (anchors or []) if anchor]
@@ -246,38 +352,104 @@ def _extract_barcode_from_text(text):
     return line_digitavel or barcode
 
 
-def _extract_custom_field(text: str, anchors, inferred_type: str):
-    inferred_type = (inferred_type or "text").lower()
-    context_lines = _context_lines_for_type(inferred_type)
-    lines = _collect_anchor_lines(text, anchors, context_lines)
-    if not lines:
-        return None
-    if inferred_type in {"money", "amount"}:
-        return _extract_money_from_lines(lines)
-    if inferred_type in {"date"}:
-        return _extract_date_from_lines(lines)
-    if inferred_type in {"cpf"}:
-        return extract_cpf("\n".join(lines)).get("cpf")
-    if inferred_type in {"cnpj"}:
-        return extract_cnpj("\n".join(lines)).get("cnpj")
-    if inferred_type in {"barcode"}:
-        return _extract_barcode_from_text("\n".join(lines))
-    if inferred_type in {"postal"}:
-        return _extract_postal_from_lines(lines)
-    if inferred_type in {"id"}:
-        value = _extract_id_from_lines(lines)
-        if value and _is_noise_value(value, anchors, inferred_type):
+def extract_custom(keyword_def: dict, text: str):
+    anchors = keyword_def.get("anchors") or []
+    label = (keyword_def.get("label") or "").strip()
+    if not anchors and label:
+        anchors = [label]
+
+    value_type = (keyword_def.get("value_type") or keyword_def.get("inferred_type") or "text").lower()
+    if value_type not in {"text", "block", "money", "date", "cpf", "cnpj", "id", "barcode", "address", "postal"}:
+        value_type = "text"
+    strategy = (keyword_def.get("strategy") or "after_label").lower()
+    if strategy not in {"after_label", "next_line", "below_n_lines", "regex", "nearest_match"}:
+        strategy = "after_label"
+    params = keyword_def.get("strategy_params") or {}
+    if not isinstance(params, dict):
+        params = {}
+
+    lines = _split_lines(text)
+    anchor_indexes = _find_anchor_indexes(lines, anchors)
+    window_size = None
+
+    if strategy == "regex":
+        pattern = params.get("pattern")
+        if not pattern:
+            _log_custom_attempt(keyword_def.get("keyword_key") or label, value_type, strategy, anchors, window_size, False)
             return None
-        return value
-    if inferred_type in {"address"}:
-        value = _extract_text_from_lines(lines, anchors)
-        if value and _is_noise_value(value, anchors, inferred_type):
+        try:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+        except re.error:
+            _log_custom_attempt(keyword_def.get("keyword_key") or label, value_type, strategy, anchors, window_size, False)
             return None
+        if not match:
+            _log_custom_attempt(keyword_def.get("keyword_key") or label, value_type, strategy, anchors, window_size, False)
+            return None
+        value = match.group(1) if match.groups() else match.group(0)
+        if value and _is_noise_value(value, anchors, value_type):
+            value = None
+        _log_custom_attempt(keyword_def.get("keyword_key") or label, value_type, strategy, anchors, window_size, bool(value))
         return value
-    value = _extract_text_from_lines(lines, anchors)
-    if value and _is_noise_value(value, anchors, inferred_type):
+
+    if not anchor_indexes:
+        _log_custom_attempt(keyword_def.get("keyword_key") or label, value_type, strategy, anchors, window_size, False)
         return None
-    return value
+
+    if strategy == "after_label":
+        for idx in anchor_indexes:
+            value = _extract_after_label(lines[idx], anchors)
+            if value and _is_noise_value(value, anchors, value_type):
+                value = None
+            if value:
+                _log_custom_attempt(keyword_def.get("keyword_key") or label, value_type, strategy, anchors, 0, True)
+                return value
+        _log_custom_attempt(keyword_def.get("keyword_key") or label, value_type, strategy, anchors, 0, False)
+        return None
+
+    if strategy == "next_line":
+        for idx in anchor_indexes:
+            value = _next_non_empty_line(lines, idx + 1)
+            if value and _is_noise_value(value, anchors, value_type):
+                value = None
+            if value:
+                _log_custom_attempt(keyword_def.get("keyword_key") or label, value_type, strategy, anchors, 1, True)
+                return value
+        _log_custom_attempt(keyword_def.get("keyword_key") or label, value_type, strategy, anchors, 1, False)
+        return None
+
+    if strategy in {"below_n_lines", "nearest_match"}:
+        max_lines = params.get("max_lines")
+        try:
+            max_lines = int(max_lines)
+        except (TypeError, ValueError):
+            max_lines = _context_lines_for_type(value_type)
+        max_lines = max(1, max_lines)
+        window_size = max_lines
+        for idx in anchor_indexes:
+            if strategy == "nearest_match":
+                start = max(0, idx - max_lines)
+                end = min(len(lines), idx + max_lines + 1)
+                context_lines = lines[start:end]
+            else:
+                start = min(idx + 1, len(lines))
+                end = min(len(lines), start + max_lines)
+                context_lines = lines[start:end]
+            value = _extract_value_from_lines(context_lines, anchors, value_type, max_lines)
+            if value:
+                _log_custom_attempt(
+                    keyword_def.get("keyword_key") or label,
+                    value_type,
+                    strategy,
+                    anchors,
+                    window_size,
+                    True,
+                )
+                return value
+        _log_custom_attempt(keyword_def.get("keyword_key") or label, value_type, strategy, anchors, window_size, False)
+        return None
+
+    _log_custom_attempt(keyword_def.get("keyword_key") or label, value_type, strategy, anchors, window_size, False)
+    return None
 
 
 def extract_missing_with_llm(text: str, fields):
@@ -285,6 +457,33 @@ def extract_missing_with_llm(text: str, fields):
 
 
 def classify_document_type(text: str):
+    if not text:
+        return None
+
+    candidates = _extract_line_candidates(text)
+    line_digitavel, barcode = _select_barcode_and_line(candidates)
+    if line_digitavel or barcode:
+        return "boleto"
+
+    normalized = _normalize_for_match(text)
+    if not normalized:
+        return None
+
+    doc_signals = [
+        ("boleto", ["boleto", "linha digitavel", "codigo de barras"]),
+        ("nota_fiscal", ["nota fiscal", "nf-e", "nfe", "danfe"]),
+        ("fatura", ["fatura", "invoice"]),
+        ("recibo", ["recibo"]),
+        (
+            "comprovante",
+            ["comprovante", "comprovacao", "comprovante de pagamento", "pix", "transferencia", "transacao"],
+        ),
+    ]
+
+    for doc_type, keywords in doc_signals:
+        if any(keyword in normalized for keyword in keywords):
+            return doc_type
+
     return None
 
 
@@ -374,7 +573,7 @@ def _mask_log_value(value, inferred_type: str):
         if len(digits) >= 6:
             return f"len={len(digits)} tail={digits[-6:]}"
         return f"len={len(digits)}"
-    if inferred_type in {"text", "address"}:
+    if inferred_type in {"text", "address", "block"}:
         return f"len={len(safe_value)}"
     if inferred_type == "id":
         compact = re.sub(r"[^0-9A-Za-z]", "", safe_value)
@@ -732,12 +931,10 @@ def process_document(
     for info in custom_definitions:
         keyword_key = info.get("keyword_key") or ""
         label = (info.get("label") or "").strip()
-        anchors = info.get("anchors") or []
         inferred_type = info.get("inferred_type") or "text"
+        value_type = info.get("value_type") or inferred_type
         match_strategy = info.get("match_strategy") or ""
-        if not anchors and label:
-            anchors = [label]
-        value = _extract_custom_field(text, anchors, inferred_type)
+        value = extract_custom(info, text)
         field_key = keyword_key or label or inferred_type
         payload["custom_fields"][field_key] = {
             "label": label or field_key,
@@ -748,7 +945,7 @@ def process_document(
                 field_key,
                 value,
                 strategy="custom",
-                inferred_type=inferred_type,
+                inferred_type=value_type,
                 match_strategy=match_strategy,
                 label=label,
             )
@@ -758,7 +955,7 @@ def process_document(
                 field_key,
                 None,
                 strategy="custom",
-                inferred_type=inferred_type,
+                inferred_type=value_type,
                 match_strategy=match_strategy,
                 label=label,
             )
