@@ -11,8 +11,10 @@ BASE_FIELD_CHOICES = [
 ]
 
 FIELD_CHOICES = BASE_FIELD_CHOICES + [
-    ("billing_address", "Endereco de cobranca"),
-    ("cnpj", "CNPJ"),
+    ("payer_address", "Endereco do pagador"),
+    ("payee_address", "Endereco do cedente"),
+    ("payer_cnpj", "CNPJ do pagador"),
+    ("payee_cnpj", "CNPJ do cedente"),
     ("cpf", "CPF"),
     ("payee_name", "Nome do cedente"),
     ("payer_name", "Nome do sacado"),
@@ -27,8 +29,13 @@ DOC_NUMBER_RE = re.compile(
 )
 
 ADDRESS_LABELS = (
-    "endereco",
+    "endereco do pagador",
+    "endereco do sacado",
+    "endereco do cliente",
+    "endereco do cedente",
+    "endereco do beneficiario",
     "endereco de cobranca",
+    "endereco",
     "cobranca",
 )
 
@@ -82,6 +89,26 @@ PAYER_LABELS = (
     "sacado",
     "pagador",
     "cliente",
+    "nome do cliente",
+    "dados do cliente",
+)
+
+PAYER_SCOPE_ANCHORS = (
+    "pagador",
+    "sacado",
+    "nome do cliente",
+    "dados do cliente",
+    "cliente",
+)
+
+PAYEE_SCOPE_ANCHORS = (
+    "cedente",
+    "beneficiario",
+    "favorecido",
+    "recebedor",
+    "emissor",
+    "vivo",
+    "telefonica",
 )
 
 INSTRUCTION_KEYWORDS = (
@@ -196,6 +223,46 @@ def _contains_any(value: str, terms) -> bool:
     return any(term in value for term in terms)
 
 
+def _collect_scoped_lines(text: str, anchors, window: int = 4):
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return []
+    folded_anchors = [_fold_text(anchor).lower() for anchor in (anchors or []) if anchor]
+    if not folded_anchors:
+        return []
+    folded_lines = [_fold_text(line).lower() for line in lines]
+    selected = []
+    for idx, folded_line in enumerate(folded_lines):
+        if any(anchor in folded_line for anchor in folded_anchors):
+            start = max(0, idx - window)
+            end = min(len(lines), idx + window + 1)
+            selected.extend(lines[start:end])
+    return list(dict.fromkeys(selected))
+
+
+def _extract_cnpj_from_lines(lines) -> str | None:
+    for line in lines:
+        for match in CNPJ_RE.findall(line):
+            digits = _only_digits(match)
+            if _is_valid_cnpj(digits):
+                return _format_cnpj(digits)
+    return None
+
+
+def _extract_address_from_lines(lines) -> str | None:
+    labeled = _find_labeled_value(lines, ADDRESS_LABELS)
+    if labeled:
+        return labeled
+    for line in lines:
+        lower = line.lower()
+        if not any(keyword in lower for keyword in ADDRESS_KEYWORDS):
+            continue
+        if not any(char.isdigit() for char in line):
+            continue
+        return _normalize_space(line)
+    return None
+
+
 def _looks_like_name(value: str) -> bool:
     if not value:
         return False
@@ -229,19 +296,58 @@ def extract_cnpj(text: str) -> dict:
     return {}
 
 
-def extract_billing_address(text: str) -> dict:
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    labeled = _find_labeled_value(lines, ADDRESS_LABELS)
-    if labeled:
-        return {"billing_address": labeled}
+def extract_payee_cnpj(text: str) -> dict:
+    lines = _collect_scoped_lines(text, PAYEE_SCOPE_ANCHORS, window=4)
+    if lines:
+        value = _extract_cnpj_from_lines(lines)
+        if value:
+            return {"payee_cnpj": value}
+        return {}
+    all_lines = [line.strip() for line in text.splitlines() if line.strip()]
+    value = _extract_cnpj_from_lines(all_lines)
+    if value:
+        return {"payee_cnpj": value}
+    return {}
 
-    for line in lines:
-        lower = line.lower()
-        if not any(keyword in lower for keyword in ADDRESS_KEYWORDS):
-            continue
-        if not any(char.isdigit() for char in line):
-            continue
-        return {"billing_address": _normalize_space(line)}
+
+def extract_payer_cnpj(text: str) -> dict:
+    lines = _collect_scoped_lines(text, PAYER_SCOPE_ANCHORS, window=4)
+    if not lines:
+        return {}
+    value = _extract_cnpj_from_lines(lines)
+    if not value:
+        return {}
+    return {"payer_cnpj": value}
+
+
+def extract_payee_address(text: str) -> dict:
+    lines = _collect_scoped_lines(text, PAYEE_SCOPE_ANCHORS, window=5)
+    if lines:
+        value = _extract_address_from_lines(lines)
+        if value:
+            return {"payee_address": value}
+        return {}
+    all_lines = [line.strip() for line in text.splitlines() if line.strip()]
+    value = _extract_address_from_lines(all_lines)
+    if value:
+        return {"payee_address": value}
+    return {}
+
+
+def extract_payer_address(text: str) -> dict:
+    lines = _collect_scoped_lines(text, PAYER_SCOPE_ANCHORS, window=5)
+    if not lines:
+        return {}
+    value = _extract_address_from_lines(lines)
+    if not value:
+        return {}
+    return {"payer_address": value}
+
+
+def extract_billing_address(text: str) -> dict:
+    scoped = extract_payer_address(text)
+    if scoped:
+        return {"billing_address": scoped.get("payer_address")}
     return {}
 
 
@@ -343,7 +449,10 @@ def extract_instructions(text: str) -> dict:
 
 FIELD_EXTRACTORS = {
     "billing_address": extract_billing_address,
-    "cnpj": extract_cnpj,
+    "payee_cnpj": extract_payee_cnpj,
+    "payer_cnpj": extract_payer_cnpj,
+    "payee_address": extract_payee_address,
+    "payer_address": extract_payer_address,
     "cpf": extract_cpf,
     "payee_name": extract_payee_name,
     "payer_name": extract_payer_name,
