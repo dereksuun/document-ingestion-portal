@@ -1,4 +1,9 @@
+import re
+
 from django import forms
+
+from .models import FilterPreset
+from .services import _normalize_for_match
 
 
 VALUE_TYPE_CHOICES = [
@@ -108,3 +113,86 @@ class KeywordForm(forms.Form):
         if not value:
             return ""
         return " ".join(value.split())
+
+
+TERM_SPLIT_RE = re.compile(r"[,\s]+")
+
+
+def _split_keywords(raw: str) -> list[str]:
+    if not raw:
+        return []
+    if ";" in raw:
+        parts = [term.strip() for term in raw.split(";") if term.strip()]
+    else:
+        parts = [term.strip() for term in TERM_SPLIT_RE.split(raw) if term.strip()]
+    normalized_terms = []
+    seen = set()
+    for term in parts:
+        normalized = _normalize_for_match(term)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        normalized_terms.append(normalized)
+    return normalized_terms
+
+
+class FilterPresetForm(forms.ModelForm):
+    keywords_text = forms.CharField(
+        required=False,
+        label="Palavras-chave",
+        widget=forms.Textarea(
+            attrs={
+                "class": "input-text",
+                "rows": 3,
+                "placeholder": "Separe termos com ;",
+            }
+        ),
+    )
+
+    class Meta:
+        model = FilterPreset
+        fields = [
+            "name",
+            "scope",
+            "document_type",
+            "keywords_mode",
+            "experience_min_years",
+            "experience_max_years",
+            "age_min_years",
+            "age_max_years",
+        ]
+        widgets = {
+            "name": forms.TextInput(attrs={"class": "input-text"}),
+            "scope": forms.Select(attrs={"class": "input-select"}),
+            "document_type": forms.TextInput(attrs={"class": "input-text"}),
+            "keywords_mode": forms.Select(attrs={"class": "input-select"}),
+            "experience_min_years": forms.NumberInput(attrs={"class": "input-text", "min": 0}),
+            "experience_max_years": forms.NumberInput(attrs={"class": "input-text", "min": 0}),
+            "age_min_years": forms.NumberInput(attrs={"class": "input-text", "min": 0}),
+            "age_max_years": forms.NumberInput(attrs={"class": "input-text", "min": 0}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and getattr(self.instance, "keywords", None):
+            self.fields["keywords_text"].initial = "; ".join(self.instance.keywords)
+
+    def clean(self):
+        cleaned = super().clean()
+        exp_min = cleaned.get("experience_min_years")
+        exp_max = cleaned.get("experience_max_years")
+        if exp_min is not None and exp_max is not None and exp_min > exp_max:
+            self.add_error("experience_max_years", "Maximo deve ser maior ou igual ao minimo.")
+        age_min = cleaned.get("age_min_years")
+        age_max = cleaned.get("age_max_years")
+        if age_min is not None and age_max is not None and age_min > age_max:
+            self.add_error("age_max_years", "Maximo deve ser maior ou igual ao minimo.")
+        return cleaned
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        raw = self.cleaned_data.get("keywords_text") or ""
+        instance.keywords = _split_keywords(raw)
+        if commit:
+            instance.save()
+        return instance

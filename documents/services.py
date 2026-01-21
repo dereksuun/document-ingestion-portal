@@ -4,7 +4,7 @@ import re
 import shutil
 import time
 import unicodedata
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from pypdf import PdfReader
@@ -42,6 +42,14 @@ GENERIC_ID_RE = re.compile(r"\b[0-9A-Z]{5,}\b")
 CEP_RE = re.compile(r"\b\d{5}-?\d{3}\b")
 JUROS_LABEL_RE = re.compile(r"(?i)(juros)\D{0,20}([0-9\.]+,[0-9]{2})")
 MULTA_LABEL_RE = re.compile(r"(?i)(multa)\D{0,20}([0-9\.]+,[0-9]{2})")
+PHONE_CANDIDATE_RE = re.compile(r"(?:\+?\d[\d\-\.\(\)\s]{8,}\d)")
+DOB_RE = re.compile(
+    r"(?i)(?:data\s+de\s+nascimento|nascimento|nasc\.?)\D{0,10}(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})"
+)
+AGE_INLINE_RE = re.compile(r"(?i)\b(\d{1,2})\s+anos?\s+de\s+idade\b")
+AGE_LABEL_RE = re.compile(r"(?i)\bidade\D{0,6}(\d{1,2})\b")
+EXPERIENCE_RE = re.compile(r"(?i)\b(\d{1,2})\s+anos?\s+(?:de\s+)?experiencia\b")
+EXPERIENCE_LABEL_RE = re.compile(r"(?i)\bexperiencia\D{0,10}(\d{1,2})\s*anos?\b")
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +114,121 @@ def _normalize_for_match(value: str) -> str:
 
 
 _CUSTOM_STOP_NORMS = {_normalize_for_match(value) for value in CUSTOM_STOP_PHRASES}
+
+
+def _coerce_year(value: int) -> int:
+    if value >= 100:
+        return value
+    current_year = date.today().year
+    pivot = current_year % 100
+    return (2000 + value) if value <= pivot else (1900 + value)
+
+
+def _valid_years(value: int, *, min_value: int = 0, max_value: int = 120) -> int | None:
+    if value < min_value or value > max_value:
+        return None
+    return value
+
+
+def extract_contact_phone(text: str) -> str | None:
+    if not text:
+        return None
+    seen = set()
+    best = None
+    best_score = -1
+    for match in PHONE_CANDIDATE_RE.finditer(text):
+        raw = match.group(0)
+        digits = re.sub(r"\D", "", raw)
+        if digits in seen:
+            continue
+        seen.add(digits)
+        if len(digits) in {12, 13} and not digits.startswith("55"):
+            continue
+        if len(digits) not in {10, 11, 12, 13}:
+            continue
+        has_country = digits.startswith("55")
+        local = digits[2:] if has_country else digits
+        if len(local) not in {10, 11}:
+            continue
+        is_mobile = len(local) == 11
+        score = 0
+        if has_country:
+            score += 3
+        if raw.strip().startswith("+"):
+            score += 1
+        if is_mobile:
+            score += 2
+        if score > best_score:
+            best_score = score
+            best = digits
+    if not best:
+        return None
+    if best.startswith("55"):
+        return best
+    return f"55{best}"
+
+
+def extract_age_years(text: str) -> int | None:
+    if not text:
+        return None
+    normalized = _normalize_for_match(text)
+    match = DOB_RE.search(normalized)
+    if match:
+        raw = match.group(1)
+        parts = re.split(r"[/-]", raw)
+        if len(parts) == 3:
+            try:
+                day, month, year = (int(item) for item in parts)
+            except ValueError:
+                day = month = year = None
+            if day and month and year:
+                year = _coerce_year(year)
+                try:
+                    birth_date = date(year, month, day)
+                except ValueError:
+                    birth_date = None
+                if birth_date:
+                    today = date.today()
+                    age = today.year - birth_date.year
+                    if (today.month, today.day) < (birth_date.month, birth_date.day):
+                        age -= 1
+                    return _valid_years(age)
+
+    match = AGE_INLINE_RE.search(normalized) or AGE_LABEL_RE.search(normalized)
+    if match:
+        try:
+            age_value = int(match.group(1))
+        except ValueError:
+            age_value = None
+        if age_value is not None:
+            return _valid_years(age_value)
+
+    for match in re.finditer(r"\b(\d{1,2})\s+anos?\b", normalized):
+        window = normalized[max(0, match.start() - 20) : match.end() + 20]
+        if "idade" not in window:
+            continue
+        try:
+            age_value = int(match.group(1))
+        except ValueError:
+            continue
+        age_value = _valid_years(age_value)
+        if age_value is not None:
+            return age_value
+    return None
+
+
+def extract_experience_years(text: str) -> int | None:
+    if not text:
+        return None
+    normalized = _normalize_for_match(text)
+    match = EXPERIENCE_RE.search(normalized) or EXPERIENCE_LABEL_RE.search(normalized)
+    if not match:
+        return None
+    try:
+        years_value = int(match.group(1))
+    except ValueError:
+        return None
+    return _valid_years(years_value, min_value=0, max_value=60)
 
 
 def _context_lines_for_type(inferred_type: str) -> int:

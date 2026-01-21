@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Document, ExtractionField, ExtractionKeyword, ExtractionProfile
+from .models import Document, ExtractionField, ExtractionKeyword, ExtractionProfile, FilterPreset
 
 KEYWORD_PREFIX = "keyword:"
 
@@ -104,3 +104,10 @@ class ExtractionKeywordAdmin(admin.ModelAdmin):
         for owner_id, keys in keys_by_owner.items():
             _remove_field_keys(keys, owner_id=owner_id)
         super().delete_queryset(request, queryset)
+
+
+@admin.register(FilterPreset)
+class FilterPresetAdmin(admin.ModelAdmin):
+    list_display = ("name", "owner", "scope", "document_type", "updated_at")
+    list_filter = ("scope", "document_type", "updated_at")
+    search_fields = ("name", "owner__username", "owner__email", "document_type")

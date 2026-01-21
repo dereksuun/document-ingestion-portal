@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Presets{% endblock %}
+
+{% block content %}
+  <div class="card">
+    <div class="page-header">
+      <div>
+        <h1>{% if preset %}Editar preset{% else %}Presets de filtros{% endif %}</h1>
+        <p class="help-text">Crie filtros reutilizaveis por palavras-chave, idade, experiencia e tipo de documento.</p>
+      </div>
+      <a class="btn btn-ghost" href="{% url 'documents_list' %}">Voltar</a>
+    </div>
+
+    <form method="post" class="settings-form">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <div class="settings-grid">
+        <label class="filter-field">
+          <span>Nome do preset</span>
+          {{ form.name }}
+          {% if form.name.errors %}
+            <p class="error-hint">{{ form.name.errors|striptags }}</p>
+          {% endif %}
+        </label>
+        <label class="filter-field">
+          <span>Escopo</span>
+          {{ form.scope }}
+        </label>
+        <label class="filter-field">
+          <span>Tipo de documento</span>
+          {{ form.document_type }}
+        </label>
+        <label class="filter-field">
+          <span>Modo palavras-chave</span>
+          {{ form.keywords_mode }}
+        </label>
+        <label class="filter-field">
+          <span>Experiencia minimo (anos)</span>
+          {{ form.experience_min_years }}
+        </label>
+        <label class="filter-field">
+          <span>Experiencia maximo (anos)</span>
+          {{ form.experience_max_years }}
+          {% if form.experience_max_years.errors %}
+            <p class="error-hint">{{ form.experience_max_years.errors|striptags }}</p>
+          {% endif %}
+        </label>
+        <label class="filter-field">
+          <span>Idade minima (anos)</span>
+          {{ form.age_min_years }}
+        </label>
+        <label class="filter-field">
+          <span>Idade maxima (anos)</span>
+          {{ form.age_max_years }}
+          {% if form.age_max_years.errors %}
+            <p class="error-hint">{{ form.age_max_years.errors|striptags }}</p>
+          {% endif %}
+        </label>
+      </div>
+      <label class="filter-field">
+        <span>Palavras-chave</span>
+        {{ form.keywords_text }}
+        {% if form.keywords_text.errors %}
+          <p class="error-hint">{{ form.keywords_text.errors|striptags }}</p>
+        {% endif %}
+      </label>
+      <div class="filters-actions">
+        <button class="btn btn-primary" type="submit">
+          {% if preset %}Salvar preset{% else %}Criar preset{% endif %}
+        </button>
+        {% if preset %}
+          <a class="btn btn-ghost" href="{% url 'filter_presets' %}">Cancelar</a>
+        {% endif %}
+      </div>
+    </form>
+
+    <div class="keyword-admin">
+      <h2>Presets salvos</h2>
+      {% if presets %}
+        <div class="keyword-admin-list">
+          {% for item in presets %}
+            <div class="keyword-admin-item">
+              <div>
+                <strong>{{ item.name }}</strong>
+                <div class="help-text">
+                  {% if item.document_type %}
+                    Tipo: {{ item.document_type }}
+                  {% else %}
+                    Tipo: qualquer
+                  {% endif %}
+                  {% if item.keywords %}
+                    · Termos: {{ item.keywords|join:"; " }}
+                  {% endif %}
+                  {% if item.experience_min_years is not None or item.experience_max_years is not None %}
+                    · Experiencia: {{ item.experience_min_years|default_if_none:"?" }}–{{ item.experience_max_years|default_if_none:"?" }} anos
+                  {% endif %}
+                  {% if item.age_min_years is not None or item.age_max_years is not None %}
+                    · Idade: {{ item.age_min_years|default_if_none:"?" }}–{{ item.age_max_years|default_if_none:"?" }} anos
+                  {% endif %}
+                </div>
+              </div>
+              <a class="btn btn-ghost btn-sm" href="{% url 'filter_preset_edit' item.id %}">Editar</a>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="help-text">Nenhum preset criado ainda.</p>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}

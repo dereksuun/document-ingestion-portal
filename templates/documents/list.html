@@ -30,6 +30,17 @@
             placeholder="estagio, junior"
           />
         </label>
+        <label class="filter-field">
+          <span>Preset</span>
+          <select class="input-select" name="preset">
+            <option value="">Todos</option>
+            {% for preset in presets %}
+              <option value="{{ preset.id }}" {% if preset.id|stringformat:"s" == preset_id %}selected{% endif %}>
+                {{ preset.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
         <div class="filter-toggle">
           <span>Modo</span>
           <div class="toggle-options">
@@ -46,8 +57,11 @@
       </div>
       <div class="filters-actions">
         <button class="btn btn-primary btn-sm" type="submit">Aplicar</button>
-        <a class="btn btn-ghost btn-sm" href="{% url 'documents_list' %}">Limpar</a>
+        <a class="btn btn-ghost btn-sm" href="{% url 'documents_list' %}">Limpar filtros</a>
         <span class="results-meta">{{ result_count }} documento{{ result_count|pluralize:"s" }}</span>
+        {% if active_preset %}
+          <span class="results-meta">Preset: {{ active_preset.name }}</span>
+        {% endif %}
       </div>
     </form>
 
@@ -65,11 +79,12 @@
       <table class="table table-resizable">
         <colgroup>
           <col class="col-select" />
-          <col class="col-name" />
-          <col class="col-date" />
-          <col class="col-info" />
-          <col class="col-status" />
-          <col class="col-actions" />
+        <col class="col-name" />
+        <col class="col-date" />
+        <col class="col-info" />
+        <col class="col-contact" />
+        <col class="col-status" />
+        <col class="col-actions" />
         </colgroup>
         <thead>
           <tr>
@@ -77,6 +92,7 @@
             <th data-min-width="160">Nome do documento</th>
             <th data-min-width="120">Data cadastro</th>
             <th data-min-width="220">Informações</th>
+            <th data-min-width="150">Contato</th>
             <th data-min-width="110">Status</th>
             <th data-min-width="170">Ações</th>
           </tr>
@@ -99,6 +115,15 @@
               <td class="doc-info">
                 {% if d.search_snippet %}
                   <div class="doc-snippet">{{ d.search_snippet }}</div>
+                {% else %}
+                  <div class="info-empty">—</div>
+                {% endif %}
+              </td>
+              <td>
+                {% if d.contact_phone %}
+                  <a href="https://web.whatsapp.com/send?phone={{ d.contact_phone }}" target="_blank" rel="noopener noreferrer">
+                    {{ d.contact_phone }}
+                  </a>
                 {% else %}
                   <div class="info-empty">—</div>
                 {% endif %}
@@ -140,7 +165,7 @@
             </tr>
           {% empty %}
             <tr>
-              <td colspan="6">Nenhum documento enviado ainda.</td>
+              <td colspan="7">Nenhum documento enviado ainda.</td>
             </tr>
           {% endfor %}
         </tbody>

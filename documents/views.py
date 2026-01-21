@@ -13,7 +13,7 @@ from django.http import FileResponse, HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.text import get_valid_filename
 
-from .forms import ExtractionSettingsForm, KeywordForm, MultiUploadForm
+from .forms import ExtractionSettingsForm, FilterPresetForm, KeywordForm, MultiUploadForm
 from .intent import resolve_intent
 from .models import (
     Document,
@@ -21,11 +21,20 @@ from .models import (
     ExtractionField,
     ExtractionKeyword,
     ExtractionProfile,
+    FilterPreset,
     STRATEGY_CHOICES,
     VALUE_TYPE_CHOICES,
     _normalize_keyword,
 )
-from .services import KEYWORD_PREFIX, _normalize_for_match, process_document, sanitize_payload
+from .services import (
+    KEYWORD_PREFIX,
+    _normalize_for_match,
+    extract_age_years,
+    extract_contact_phone,
+    extract_experience_years,
+    process_document,
+    sanitize_payload,
+)
 
 PAGE_SIZE = 10
 MAX_BULK = 25
@@ -52,6 +61,40 @@ def _split_terms(raw: str) -> list[str]:
         seen.add(normalized)
         normalized_terms.append(normalized)
     return normalized_terms
+
+
+def _apply_term_filters(queryset, terms: list[str], *, mode: str = "all", field: str = "text_content_norm"):
+    if not terms:
+        return queryset
+    if mode == "any":
+        query = Q()
+        for term in terms:
+            query |= Q(**{f"{field}__icontains": term})
+        return queryset.filter(query)
+    for term in terms:
+        queryset = queryset.filter(**{f"{field}__icontains": term})
+    return queryset
+
+
+def _apply_preset_filters(queryset, preset: FilterPreset):
+    if not preset:
+        return queryset
+    if preset.document_type:
+        queryset = queryset.filter(document_type=preset.document_type)
+    mode = (preset.keywords_mode or "all").lower()
+    if mode not in {"all", "any"}:
+        mode = "all"
+    keywords = preset.keywords or []
+    queryset = _apply_term_filters(queryset, keywords, mode=mode)
+    if preset.experience_min_years is not None:
+        queryset = queryset.filter(extracted_experience_years__gte=preset.experience_min_years)
+    if preset.experience_max_years is not None:
+        queryset = queryset.filter(extracted_experience_years__lte=preset.experience_max_years)
+    if preset.age_min_years is not None:
+        queryset = queryset.filter(extracted_age_years__gte=preset.age_min_years)
+    if preset.age_max_years is not None:
+        queryset = queryset.filter(extracted_age_years__lte=preset.age_max_years)
+    return queryset
 
 
 def _build_snippet(text: str, terms: list[str], max_len: int = SEARCH_SNIPPET_LEN) -> str:
@@ -132,6 +175,18 @@ def _get_profile(user):
     return profile
 
 
+def _apply_extracted_fields(doc: Document, extracted_text: str, payload: dict):
+    text_value = extracted_text or ""
+    normalized = _normalize_for_match(text_value)
+    doc.extracted_text_normalized = normalized
+    doc.text_content = text_value
+    doc.text_content_norm = normalized
+    doc.document_type = (payload or {}).get("document_type") or ""
+    doc.contact_phone = extract_contact_phone(text_value)
+    doc.extracted_age_years = extract_age_years(text_value)
+    doc.extracted_experience_years = extract_experience_years(text_value)
+
+
 def _get_force_ocr(request) -> bool:
     return request.POST.get("force_ocr") == "1" or request.GET.get("force_ocr") == "1"
 
@@ -177,6 +232,12 @@ def upload_documents(request):
                         "extracted_json",
                         "extracted_text",
                         "extracted_text_normalized",
+                        "text_content",
+                        "text_content_norm",
+                        "document_type",
+                        "contact_phone",
+                        "extracted_age_years",
+                        "extracted_experience_years",
                         "ocr_used",
                         "text_quality",
                     ]
@@ -189,7 +250,7 @@ def upload_documents(request):
                         doc_id=str(doc.id),
                         filename=doc.original_filename,
                     )
-                    doc.extracted_text_normalized = _normalize_for_match(extracted_text or "")
+                    _apply_extracted_fields(doc, extracted_text, data)
                     doc.mark_done(
                         data,
                         extracted_text=extracted_text,
@@ -217,6 +278,7 @@ def upload_documents(request):
 def documents_list(request):
     search_query = request.GET.get("q", "").strip()
     exclude_query = request.GET.get("exclude", "").strip()
+    preset_id = request.GET.get("preset", "").strip()
     mode = (request.GET.get("mode", "all") or "all").lower()
     if mode not in {"all", "any"}:
         mode = "all"
@@ -225,19 +287,16 @@ def documents_list(request):
     exclude_terms = _split_terms(exclude_query)
 
     docs = Document.objects.filter(owner=request.user)
-    if search_terms:
-        if mode == "any":
-            query = Q()
-            for term in search_terms:
-                query |= Q(extracted_text_normalized__icontains=term)
-            docs = docs.filter(query)
-        else:
-            for term in search_terms:
-                docs = docs.filter(extracted_text_normalized__icontains=term)
+    presets = list(FilterPreset.objects.filter(owner=request.user).order_by("name"))
+    active_preset = None
+    if preset_id:
+        active_preset = get_object_or_404(FilterPreset, id=preset_id, owner=request.user)
+        docs = _apply_preset_filters(docs, active_preset)
 
+    docs = _apply_term_filters(docs, search_terms, mode=mode)
     if exclude_terms:
         for term in exclude_terms:
-            docs = docs.exclude(extracted_text_normalized__icontains=term)
+            docs = docs.exclude(text_content_norm__icontains=term)
 
     docs = docs.order_by("-uploaded_at")
     paginator = Paginator(docs, PAGE_SIZE)
@@ -255,7 +314,8 @@ def documents_list(request):
         )
 
     for doc in page_obj:
-        doc.search_snippet = _build_snippet(doc.extracted_text or "", search_terms)
+        snippet_source = doc.text_content or doc.extracted_text or ""
+        doc.search_snippet = _build_snippet(snippet_source, search_terms)
 
     query_params = request.GET.copy()
     query_params.pop("page", None)
@@ -268,6 +328,9 @@ def documents_list(request):
             "page_obj": page_obj,
             "search_query": search_query,
             "exclude_query": exclude_query,
+            "presets": presets,
+            "active_preset": active_preset,
+            "preset_id": preset_id,
             "mode": mode,
             "result_count": result_count,
             "querystring": querystring,
@@ -408,6 +471,50 @@ def extraction_settings(request):
 
 
 @login_required
+def filter_presets(request):
+    presets = list(FilterPreset.objects.filter(owner=request.user).order_by("name"))
+    form = FilterPresetForm()
+    if request.method == "POST":
+        form = FilterPresetForm(request.POST)
+        if form.is_valid():
+            preset = form.save(commit=False)
+            preset.owner = request.user
+            preset.save()
+            return redirect("filter_presets")
+    return render(
+        request,
+        "documents/presets.html",
+        {
+            "form": form,
+            "presets": presets,
+            "preset": None,
+        },
+    )
+
+
+@login_required
+def filter_preset_edit(request, preset_id):
+    preset = get_object_or_404(FilterPreset, id=preset_id, owner=request.user)
+    presets = list(FilterPreset.objects.filter(owner=request.user).order_by("name"))
+    if request.method == "POST":
+        form = FilterPresetForm(request.POST, instance=preset)
+        if form.is_valid():
+            form.save()
+            return redirect("filter_presets")
+    else:
+        form = FilterPresetForm(instance=preset)
+    return render(
+        request,
+        "documents/presets.html",
+        {
+            "form": form,
+            "presets": presets,
+            "preset": preset,
+        },
+    )
+
+
+@login_required
 def delete_keyword(request, keyword_id):
     if not request.user.is_staff:
         return HttpResponseForbidden("Sem permissao.")
@@ -466,6 +573,12 @@ def process_document_view(request, doc_id):
             "extracted_json",
             "extracted_text",
             "extracted_text_normalized",
+            "text_content",
+            "text_content_norm",
+            "document_type",
+            "contact_phone",
+            "extracted_age_years",
+            "extracted_experience_years",
             "ocr_used",
             "text_quality",
         ]
@@ -481,7 +594,7 @@ def process_document_view(request, doc_id):
             filename=doc.original_filename,
             force_ocr=force_ocr,
         )
-        doc.extracted_text_normalized = _normalize_for_match(extracted_text or "")
+        _apply_extracted_fields(doc, extracted_text, data)
         doc.mark_done(
             data,
             extracted_text=extracted_text,
@@ -542,6 +655,12 @@ def process_documents_bulk(request):
                 "extracted_json",
                 "extracted_text",
                 "extracted_text_normalized",
+                "text_content",
+                "text_content_norm",
+                "document_type",
+                "contact_phone",
+                "extracted_age_years",
+                "extracted_experience_years",
                 "ocr_used",
                 "text_quality",
             ]
@@ -555,7 +674,7 @@ def process_documents_bulk(request):
                 filename=doc.original_filename,
                 force_ocr=force_ocr,
             )
-            doc.extracted_text_normalized = _normalize_for_match(extracted_text or "")
+            _apply_extracted_fields(doc, extracted_text, data)
             doc.mark_done(
                 data,
                 extracted_text=extracted_text,

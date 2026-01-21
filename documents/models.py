@@ -28,6 +28,17 @@ STRATEGY_CHOICES = [
     ("nearest_match", "Mais proximo"),
 ]
 
+FILTER_SCOPE_CHOICES = [
+    ("private", "Privado"),
+    ("team", "Equipe"),
+    ("global", "Global"),
+]
+
+KEYWORDS_MODE_CHOICES = [
+    ("all", "Todos"),
+    ("any", "Qualquer"),
+]
+
 
 class DocumentStatus(models.TextChoices):
     PENDING = "PENDING", "Pendente"
@@ -100,6 +111,32 @@ class ExtractionKeyword(models.Model):
         return f"ExtractionKeyword({self.owner_id}, {self.label})"
 
 
+class FilterPreset(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    name = models.CharField(max_length=120)
+    scope = models.CharField(max_length=16, choices=FILTER_SCOPE_CHOICES, default="private")
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="filter_presets")
+
+    document_type = models.CharField(max_length=40, blank=True, default="")
+    keywords = models.JSONField(default=list)
+    keywords_mode = models.CharField(max_length=8, choices=KEYWORDS_MODE_CHOICES, default="all")
+
+    experience_min_years = models.PositiveSmallIntegerField(null=True, blank=True)
+    experience_max_years = models.PositiveSmallIntegerField(null=True, blank=True)
+    age_min_years = models.PositiveSmallIntegerField(null=True, blank=True)
+    age_max_years = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"FilterPreset({self.owner_id}, {self.name})"
+
+
 class Document(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -121,6 +158,12 @@ class Document(models.Model):
     extracted_json = models.JSONField(null=True, blank=True)
     extracted_text = models.TextField(blank=True, default="")
     extracted_text_normalized = models.TextField(blank=True, default="")
+    text_content = models.TextField(blank=True, default="")
+    text_content_norm = models.TextField(blank=True, default="")
+    document_type = models.CharField(max_length=40, blank=True, default="")
+    contact_phone = models.CharField(max_length=20, null=True, blank=True)
+    extracted_age_years = models.PositiveSmallIntegerField(null=True, blank=True)
+    extracted_experience_years = models.PositiveSmallIntegerField(null=True, blank=True)
     ocr_used = models.BooleanField(default=False)
     text_quality = models.PositiveIntegerField(null=True, blank=True)
     error_message = models.TextField(blank=True, default="")
@@ -135,6 +178,12 @@ class Document(models.Model):
         self.processed_at = None
         self.extracted_text = ""
         self.extracted_text_normalized = ""
+        self.text_content = ""
+        self.text_content_norm = ""
+        self.document_type = ""
+        self.contact_phone = None
+        self.extracted_age_years = None
+        self.extracted_experience_years = None
         self.ocr_used = False
         self.text_quality = None
         self.error_message = ""
