@@ -113,6 +113,7 @@ class FilterPreset(models.Model):
 
     keywords = models.JSONField(default=list)
     keywords_mode = models.CharField(max_length=8, choices=KEYWORDS_MODE_CHOICES, default="all")
+    exclude_unknowns = models.BooleanField(default=False)
 
     experience_min_years = models.PositiveSmallIntegerField(null=True, blank=True)
     experience_max_years = models.PositiveSmallIntegerField(null=True, blank=True)

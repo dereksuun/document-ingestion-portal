@@ -154,6 +154,7 @@ class FilterPresetForm(forms.ModelForm):
         fields = [
             "name",
             "keywords_mode",
+            "exclude_unknowns",
             "experience_min_years",
             "age_min_years",
             "age_max_years",
@@ -161,6 +162,7 @@ class FilterPresetForm(forms.ModelForm):
         widgets = {
             "name": forms.TextInput(attrs={"class": "input-text"}),
             "keywords_mode": forms.Select(attrs={"class": "input-select"}),
+            "exclude_unknowns": forms.CheckboxInput(attrs={"class": "input-checkbox"}),
             "experience_min_years": forms.NumberInput(attrs={"class": "input-text", "min": 0}),
             "age_min_years": forms.NumberInput(attrs={"class": "input-text", "min": 0}),
             "age_max_years": forms.NumberInput(attrs={"class": "input-text", "min": 0}),

@@ -76,20 +76,49 @@ def _apply_term_filters(queryset, terms: list[str], *, mode: str = "all", field:
     return queryset
 
 
-def _apply_preset_filters(queryset, preset: FilterPreset):
+def _apply_preset_filters(
+    queryset,
+    preset: FilterPreset,
+    *,
+    experience_min_years: int | None = None,
+    age_min_years: int | None = None,
+    age_max_years: int | None = None,
+    exclude_unknowns: bool | None = None,
+):
     if not preset:
         return queryset
-    mode = (preset.keywords_mode or "all").lower()
-    if mode not in {"all", "any"}:
-        mode = "all"
-    keywords = preset.keywords or []
-    queryset = _apply_term_filters(queryset, keywords, mode=mode)
-    if preset.experience_min_years is not None:
-        queryset = queryset.filter(extracted_experience_years__gte=preset.experience_min_years)
-    if preset.age_min_years is not None:
-        queryset = queryset.filter(extracted_age_years__gte=preset.age_min_years)
-    if preset.age_max_years is not None:
-        queryset = queryset.filter(extracted_age_years__lte=preset.age_max_years)
+    if experience_min_years is None:
+        experience_min_years = preset.experience_min_years
+    if age_min_years is None:
+        age_min_years = preset.age_min_years
+    if age_max_years is None:
+        age_max_years = preset.age_max_years
+    if exclude_unknowns is None:
+        exclude_unknowns = preset.exclude_unknowns
+    if experience_min_years is not None:
+        if exclude_unknowns:
+            queryset = queryset.filter(extracted_experience_years__gte=experience_min_years)
+        else:
+            queryset = queryset.filter(
+                Q(extracted_experience_years__isnull=True)
+                | Q(extracted_experience_years__gte=experience_min_years)
+            )
+    if age_min_years is not None:
+        if exclude_unknowns:
+            queryset = queryset.filter(extracted_age_years__gte=age_min_years)
+        else:
+            queryset = queryset.filter(
+                Q(extracted_age_years__isnull=True)
+                | Q(extracted_age_years__gte=age_min_years)
+            )
+    if age_max_years is not None:
+        if exclude_unknowns:
+            queryset = queryset.filter(extracted_age_years__lte=age_max_years)
+        else:
+            queryset = queryset.filter(
+                Q(extracted_age_years__isnull=True)
+                | Q(extracted_age_years__lte=age_max_years)
+            )
     return queryset
 
 
@@ -275,6 +304,9 @@ def documents_list(request):
     search_query = request.GET.get("q", "").strip()
     exclude_query = request.GET.get("exclude", "").strip()
     preset_id = request.GET.get("preset", "").strip()
+    exp_min_raw = request.GET.get("experience_min_years", "").strip()
+    age_min_raw = request.GET.get("age_min_years", "").strip()
+    age_max_raw = request.GET.get("age_max_years", "").strip()
     mode = (request.GET.get("mode", "all") or "all").lower()
     if mode not in {"all", "any"}:
         mode = "all"
@@ -282,14 +314,71 @@ def documents_list(request):
     search_terms = _split_terms(search_query)
     exclude_terms = _split_terms(exclude_query)
 
+    def _parse_int(value: str) -> int | None:
+        if not value:
+            return None
+        try:
+            return int(value)
+        except ValueError:
+            return None
+
+    exp_min_override = _parse_int(exp_min_raw)
+    age_min_override = _parse_int(age_min_raw)
+    age_max_override = _parse_int(age_max_raw)
+
     docs = Document.objects.filter(owner=request.user)
     presets = list(FilterPreset.objects.filter(owner=request.user).order_by("name"))
     active_preset = None
+    preset_keywords_display = ""
+    display_search_query = search_query
+    experience_min_value = exp_min_raw
+    age_min_value = age_min_raw
+    age_max_value = age_max_raw
+    effective_terms = search_terms
+    effective_mode = mode
     if preset_id:
         active_preset = get_object_or_404(FilterPreset, id=preset_id, owner=request.user)
-        docs = _apply_preset_filters(docs, active_preset)
+        if exp_min_override is None:
+            experience_min_value = (
+                str(active_preset.experience_min_years)
+                if active_preset.experience_min_years is not None
+                else ""
+            )
+        if age_min_override is None:
+            age_min_value = (
+                str(active_preset.age_min_years)
+                if active_preset.age_min_years is not None
+                else ""
+            )
+        if age_max_override is None:
+            age_max_value = (
+                str(active_preset.age_max_years)
+                if active_preset.age_max_years is not None
+                else ""
+            )
+        docs = _apply_preset_filters(
+            docs,
+            active_preset,
+            experience_min_years=exp_min_override,
+            age_min_years=age_min_override,
+            age_max_years=age_max_override,
+            exclude_unknowns=active_preset.exclude_unknowns,
+        )
+        if active_preset.keywords:
+            preset_keywords_display = "; ".join(active_preset.keywords)
+            if not search_query:
+                display_search_query = preset_keywords_display
+            if not search_terms:
+                effective_terms = active_preset.keywords
+                preset_mode = (active_preset.keywords_mode or "all").lower()
+                if preset_mode in {"all", "any"}:
+                    effective_mode = preset_mode
+            elif search_terms == active_preset.keywords:
+                preset_mode = (active_preset.keywords_mode or "all").lower()
+                if preset_mode in {"all", "any"}:
+                    effective_mode = preset_mode
 
-    docs = _apply_term_filters(docs, search_terms, mode=mode)
+    docs = _apply_term_filters(docs, effective_terms, mode=effective_mode)
     if exclude_terms:
         for term in exclude_terms:
             docs = docs.exclude(text_content_norm__icontains=term)
@@ -309,9 +398,10 @@ def documents_list(request):
             result_count,
         )
 
+    snippet_terms = effective_terms
     for doc in page_obj:
         snippet_source = doc.text_content or doc.extracted_text or ""
-        doc.search_snippet = _build_snippet(snippet_source, search_terms)
+        doc.search_snippet = _build_snippet(snippet_source, snippet_terms)
 
     query_params = request.GET.copy()
     query_params.pop("page", None)
@@ -323,10 +413,15 @@ def documents_list(request):
         {
             "page_obj": page_obj,
             "search_query": search_query,
+            "display_search_query": display_search_query,
             "exclude_query": exclude_query,
             "presets": presets,
             "active_preset": active_preset,
             "preset_id": preset_id,
+            "preset_keywords_display": preset_keywords_display,
+            "experience_min_value": experience_min_value,
+            "age_min_value": age_min_value,
+            "age_max_value": age_max_value,
             "mode": mode,
             "result_count": result_count,
             "querystring": querystring,

@@ -11,12 +11,30 @@
     <form class="filters-bar" method="get">
       <div class="filters-row">
         <label class="filter-field">
+          <span>Filtro</span>
+          <select class="input-select" name="preset">
+            <option value="">Todos</option>
+            {% for preset in presets %}
+              <option
+                value="{{ preset.id }}"
+                data-keywords="{{ preset.keywords|join:'; ' }}"
+                data-exp-min="{{ preset.experience_min_years|default_if_none:'' }}"
+                data-age-min="{{ preset.age_min_years|default_if_none:'' }}"
+                data-age-max="{{ preset.age_max_years|default_if_none:'' }}"
+                {% if preset.id|stringformat:"s" == preset_id %}selected{% endif %}
+              >
+                {{ preset.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="filter-field">
           <span>Buscar termos</span>
           <input
             class="input-text"
             type="text"
             name="q"
-            value="{{ search_query }}"
+            value="{{ display_search_query|default:search_query }}"
             placeholder="python, django, fastapi"
           />
         </label>
@@ -29,17 +47,6 @@
             value="{{ exclude_query }}"
             placeholder="estagio, junior"
           />
-        </label>
-        <label class="filter-field">
-          <span>Preset</span>
-          <select class="input-select" name="preset">
-            <option value="">Todos</option>
-            {% for preset in presets %}
-              <option value="{{ preset.id }}" {% if preset.id|stringformat:"s" == preset_id %}selected{% endif %}>
-                {{ preset.name }}
-              </option>
-            {% endfor %}
-          </select>
         </label>
         <div class="filter-toggle">
           <span>Modo</span>
@@ -55,12 +62,44 @@
           </div>
         </div>
       </div>
+      <div class="filters-row filters-row--extra" {% if not active_preset %}style="display:none;"{% endif %}>
+        <label class="filter-field">
+          <span>Experiencia minima (anos)</span>
+          <input
+            class="input-text"
+            type="number"
+            min="0"
+            name="experience_min_years"
+            value="{{ experience_min_value }}"
+          />
+        </label>
+        <label class="filter-field">
+          <span>Idade minima (anos)</span>
+          <input
+            class="input-text"
+            type="number"
+            min="0"
+            name="age_min_years"
+            value="{{ age_min_value }}"
+          />
+        </label>
+        <label class="filter-field">
+          <span>Idade maxima (anos)</span>
+          <input
+            class="input-text"
+            type="number"
+            min="0"
+            name="age_max_years"
+            value="{{ age_max_value }}"
+          />
+        </label>
+      </div>
       <div class="filters-actions">
         <button class="btn btn-primary btn-sm" type="submit">Aplicar</button>
         <a class="btn btn-ghost btn-sm" href="{% url 'documents_list' %}">Limpar filtros</a>
         <span class="results-meta">{{ result_count }} documento{{ result_count|pluralize:"s" }}</span>
         {% if active_preset %}
-          <span class="results-meta">Preset: {{ active_preset.name }}</span>
+          <span class="results-meta">Filtro: {{ active_preset.name }}</span>
         {% endif %}
       </div>
     </form>
@@ -280,6 +319,57 @@
       });
 
       updateLabel();
+    })();
+  </script>
+  <script>
+    (function () {
+      const presetSelect = document.querySelector('select[name="preset"]');
+      const searchInput = document.querySelector('input[name="q"]');
+      const extraRow = document.querySelector(".filters-row--extra");
+      const expInput = document.querySelector('input[name="experience_min_years"]');
+      const ageMinInput = document.querySelector('input[name="age_min_years"]');
+      const ageMaxInput = document.querySelector('input[name="age_max_years"]');
+      if (!presetSelect || !searchInput) {
+        return;
+      }
+
+      const getDataAttr = (name) => {
+        const option = presetSelect.options[presetSelect.selectedIndex];
+        if (!option) {
+          return "";
+        }
+        return option.getAttribute(name) || "";
+      };
+
+      const applyKeywords = () => {
+        const keywords = getDataAttr("data-keywords");
+        searchInput.value = keywords;
+        if (extraRow) {
+          extraRow.style.display = presetSelect.value ? "" : "none";
+        }
+        if (expInput) {
+          expInput.value = getDataAttr("data-exp-min");
+        }
+        if (ageMinInput) {
+          ageMinInput.value = getDataAttr("data-age-min");
+        }
+        if (ageMaxInput) {
+          ageMaxInput.value = getDataAttr("data-age-max");
+        }
+      };
+
+      presetSelect.addEventListener("change", applyKeywords);
+
+      if (!searchInput.value) {
+        const keywords = getDataAttr("data-keywords");
+        if (keywords) {
+          searchInput.value = keywords;
+        }
+      }
+
+      if (!presetSelect.value && extraRow) {
+        extraRow.style.display = "none";
+      }
     })();
   </script>
 {% endblock %}

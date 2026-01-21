@@ -50,6 +50,40 @@ AGE_INLINE_RE = re.compile(r"(?i)\b(\d{1,2})\s+anos?\s+de\s+idade\b")
 AGE_LABEL_RE = re.compile(r"(?i)\bidade\D{0,6}(\d{1,2})\b")
 EXPERIENCE_RE = re.compile(r"(?i)\b(\d{1,2})\s+anos?\s+(?:de\s+)?experiencia\b")
 EXPERIENCE_LABEL_RE = re.compile(r"(?i)\bexperiencia\D{0,10}(\d{1,2})\s*anos?\b")
+EXPERIENCE_RANGE_RE = re.compile(
+    r"(?i)\b(\d{1,2})\s*(?:a|-|ate)\s*(\d{1,2})\s*anos?\s+(?:de\s+)?experiencia\b"
+)
+EXPERIENCE_PLUS_RE = re.compile(r"(?i)\b(\d{1,2})\s*\+\s*anos?\s+(?:de\s+)?experiencia\b")
+EXPERIENCE_EN_RE = re.compile(r"(?i)\b(\d{1,2})\s*\+?\s*years?\s+of\s+experience\b")
+EXPERIENCE_YEAR_RANGE_RE = re.compile(
+    r"(?i)\b((?:19|20)\d{2})\b\s*(?:-|–|—|/|ate|até|a)\s*(\b(?:19|20)\d{2}\b|atual|presente|current|hoje)\b"
+)
+EXPERIENCE_SINCE_RE = re.compile(r"(?i)\bdesde\s+((?:19|20)\d{2})\b")
+
+EXPERIENCE_SECTION_HEADERS = (
+    "experiencia profissional",
+    "experiencias profissionais",
+    "historico profissional",
+    "historico de experiencia",
+    "experiencia",
+    "experiencias",
+    "historico",
+)
+
+EXPERIENCE_SECTION_STOP_HEADERS = (
+    "formacao",
+    "educacao",
+    "cursos",
+    "certificacao",
+    "certificacoes",
+    "habilidades",
+    "competencias",
+    "idiomas",
+    "objetivo",
+    "resumo",
+    "perfil",
+    "projetos",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -130,20 +164,129 @@ def _valid_years(value: int, *, min_value: int = 0, max_value: int = 120) -> int
     return value
 
 
+def _is_section_heading(line: str, keywords) -> bool:
+    if not line:
+        return False
+    if any(ch.isdigit() for ch in line):
+        return False
+    if len(line) > 60:
+        return False
+    return any(keyword in line for keyword in keywords)
+
+
+def _extract_experience_section(text: str) -> str:
+    if not text:
+        return ""
+    lines = [line.strip() for line in text.splitlines()]
+    if not lines:
+        return text
+    norm_lines = [_normalize_for_match(line) for line in lines]
+    start_idx = None
+    for idx, norm_line in enumerate(norm_lines):
+        if _is_section_heading(norm_line, EXPERIENCE_SECTION_HEADERS):
+            start_idx = idx
+            break
+    if start_idx is None:
+        return text
+    stop_idx = None
+    for idx in range(start_idx + 1, len(norm_lines)):
+        norm_line = norm_lines[idx]
+        if _is_section_heading(norm_line, EXPERIENCE_SECTION_STOP_HEADERS):
+            stop_idx = idx
+            break
+    section_lines = lines[start_idx:stop_idx] if stop_idx is not None else lines[start_idx:]
+    return "\n".join(section_lines).strip()
+
+
+def _extract_experience_from_timeline(text: str) -> int | None:
+    normalized = _normalize_for_match(text)
+    if not normalized:
+        return None
+    intervals = []
+    current_year = date.today().year
+    for match in EXPERIENCE_YEAR_RANGE_RE.finditer(normalized):
+        try:
+            start_year = int(match.group(1))
+        except ValueError:
+            continue
+        end_raw = (match.group(2) or "").lower()
+        if end_raw in {"atual", "presente", "current", "hoje"}:
+            end_year = current_year
+        else:
+            try:
+                end_year = int(end_raw)
+            except ValueError:
+                continue
+        if start_year > end_year:
+            continue
+        if start_year < 1950 or end_year > current_year + 1:
+            continue
+        intervals.append((start_year, end_year))
+
+    for match in EXPERIENCE_SINCE_RE.finditer(normalized):
+        try:
+            start_year = int(match.group(1))
+        except ValueError:
+            continue
+        if start_year < 1950 or start_year > current_year:
+            continue
+        intervals.append((start_year, current_year))
+
+    if not intervals:
+        return None
+
+    intervals.sort()
+    merged = []
+    for start_year, end_year in intervals:
+        if not merged or start_year > merged[-1][1]:
+            merged.append([start_year, end_year])
+        else:
+            merged[-1][1] = max(merged[-1][1], end_year)
+
+    total_years = 0
+    for start_year, end_year in merged:
+        span = end_year - start_year
+        if span == 0:
+            span = 1
+        total_years += span
+
+    return _valid_years(total_years, min_value=0, max_value=60)
+
+
 def extract_contact_phone(text: str) -> str | None:
     if not text:
         return None
+
+    def _normalize_phone_digits(raw_value: str) -> str | None:
+        digits = re.sub(r"\D", "", raw_value or "")
+        if not digits:
+            return None
+        if digits.startswith("0") and len(digits) > 10:
+            digits = digits[1:]
+        if len(digits) > 11 and not digits.startswith("55"):
+            tail11 = digits[-11:]
+            tail10 = digits[-10:]
+            if len(tail11) == 11 and not tail11.startswith("0"):
+                digits = tail11
+            else:
+                digits = tail10
+        if digits.startswith("55") and len(digits) > 13:
+            tail = digits[-11:]
+            if len(tail) in {10, 11}:
+                digits = "55" + tail
+        return digits
+
     seen = set()
     best = None
     best_score = -1
     for match in PHONE_CANDIDATE_RE.finditer(text):
         raw = match.group(0)
-        digits = re.sub(r"\D", "", raw)
+        digits = _normalize_phone_digits(raw)
+        if not digits:
+            continue
         if digits in seen:
             continue
         seen.add(digits)
-        if len(digits) in {12, 13} and not digits.startswith("55"):
-            continue
         if len(digits) not in {10, 11, 12, 13}:
             continue
         has_country = digits.startswith("55")
@@ -220,7 +363,39 @@ def extract_age_years(text: str) -> int | None:
 def extract_experience_years(text: str) -> int | None:
     if not text:
         return None
-    normalized = _normalize_for_match(text)
+    section_text = _extract_experience_section(text)
+    timeline_years = _extract_experience_from_timeline(section_text)
+    if timeline_years is not None:
+        return timeline_years
+
+    normalized = _normalize_for_match(section_text)
+    match = EXPERIENCE_RANGE_RE.search(normalized)
+    if match:
+        try:
+            years_value = int(match.group(2))
+        except ValueError:
+            years_value = None
+        if years_value is not None:
+            return _valid_years(years_value, min_value=0, max_value=60)
+
+    match = EXPERIENCE_PLUS_RE.search(normalized)
+    if match:
+        try:
+            years_value = int(match.group(1))
+        except ValueError:
+            years_value = None
+        if years_value is not None:
+            return _valid_years(years_value, min_value=0, max_value=60)
+
+    match = EXPERIENCE_EN_RE.search(normalized)
+    if match:
+        try:
+            years_value = int(match.group(1))
+        except ValueError:
+            years_value = None
+        if years_value is not None:
+            return _valid_years(years_value, min_value=0, max_value=60)
+
     match = EXPERIENCE_RE.search(normalized) or EXPERIENCE_LABEL_RE.search(normalized)
     if not match:
         return None

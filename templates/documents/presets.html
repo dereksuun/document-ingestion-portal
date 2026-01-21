@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Presets{% endblock %}
+{% block title %}Filtros{% endblock %}
 
 {% block content %}
   <div class="card">
     <div class="page-header">
       <div>
-        <h1>{% if preset %}Editar preset{% else %}Presets de filtros{% endif %}</h1>
+        <h1>{% if preset %}Editar filtro{% else %}Filtros{% endif %}</h1>
         <p class="help-text">Crie filtros reutilizaveis por palavras-chave, idade e experiencia.</p>
       </div>
       <a class="btn btn-ghost" href="{% url 'documents_list' %}">Voltar</a>
@@ -17,7 +17,7 @@
       {{ form.non_field_errors }}
       <div class="settings-grid">
         <label class="filter-field">
-          <span>Nome do preset</span>
+          <span>Nome do filtro</span>
           {{ form.name }}
           {% if form.name.errors %}
             <p class="error-hint">{{ form.name.errors|striptags }}</p>
@@ -26,6 +26,10 @@
         <label class="filter-field">
           <span>Modo palavras-chave</span>
           {{ form.keywords_mode }}
+        </label>
+        <label class="check-item">
+          {{ form.exclude_unknowns }}
+          <span>Excluir curriculos sem idade/experiencia detectada</span>
         </label>
         <label class="filter-field">
           <span>Experiencia minimo (anos)</span>
@@ -52,7 +56,7 @@
       </label>
       <div class="filters-actions">
         <button class="btn btn-primary" type="submit">
-          {% if preset %}Salvar preset{% else %}Criar preset{% endif %}
+          {% if preset %}Salvar filtro{% else %}Criar filtro{% endif %}
         </button>
         {% if preset %}
           <a class="btn btn-ghost" href="{% url 'filter_presets' %}">Cancelar</a>
@@ -61,7 +65,7 @@
     </form>
 
     <div class="keyword-admin">
-      <h2>Presets salvos</h2>
+      <h2>Filtros salvos</h2>
       {% if presets %}
         <div class="keyword-admin-list">
           {% for item in presets %}
@@ -85,7 +89,7 @@
           {% endfor %}
         </div>
       {% else %}
-        <p class="help-text">Nenhum preset criado ainda.</p>
+        <p class="help-text">Nenhum filtro criado ainda.</p>
       {% endif %}
     </div>
   </div>
