@@ -7,7 +7,7 @@
     <div class="page-header">
       <div>
         <h1>{% if preset %}Editar preset{% else %}Presets de filtros{% endif %}</h1>
-        <p class="help-text">Crie filtros reutilizaveis por palavras-chave, idade, experiencia e tipo de documento.</p>
+        <p class="help-text">Crie filtros reutilizaveis por palavras-chave, idade e experiencia.</p>
       </div>
       <a class="btn btn-ghost" href="{% url 'documents_list' %}">Voltar</a>
     </div>
@@ -22,14 +22,6 @@
           {% if form.name.errors %}
             <p class="error-hint">{{ form.name.errors|striptags }}</p>
           {% endif %}
-        </label>
-        <label class="filter-field">
-          <span>Escopo</span>
-          {{ form.scope }}
-        </label>
-        <label class="filter-field">
-          <span>Tipo de documento</span>
-          {{ form.document_type }}
         </label>
         <label class="filter-field">
           <span>Modo palavras-chave</span>
@@ -84,11 +76,6 @@
               <div>
                 <strong>{{ item.name }}</strong>
                 <div class="help-text">
-                  {% if item.document_type %}
-                    Tipo: {{ item.document_type }}
-                  {% else %}
-                    Tipo: qualquer
-                  {% endif %}
                   {% if item.keywords %}
                     · Termos: {{ item.keywords|join:"; " }}
                   {% endif %}

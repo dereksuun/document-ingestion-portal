@@ -79,8 +79,6 @@ def _apply_term_filters(queryset, terms: list[str], *, mode: str = "all", field:
 def _apply_preset_filters(queryset, preset: FilterPreset):
     if not preset:
         return queryset
-    if preset.document_type:
-        queryset = queryset.filter(document_type=preset.document_type)
     mode = (preset.keywords_mode or "all").lower()
     if mode not in {"all", "any"}:
         mode = "all"

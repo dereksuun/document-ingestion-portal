@@ -28,12 +28,6 @@ STRATEGY_CHOICES = [
     ("nearest_match", "Mais proximo"),
 ]
 
-FILTER_SCOPE_CHOICES = [
-    ("private", "Privado"),
-    ("team", "Equipe"),
-    ("global", "Global"),
-]
-
 KEYWORDS_MODE_CHOICES = [
     ("all", "Todos"),
     ("any", "Qualquer"),
@@ -115,10 +109,8 @@ class FilterPreset(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     name = models.CharField(max_length=120)
-    scope = models.CharField(max_length=16, choices=FILTER_SCOPE_CHOICES, default="private")
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="filter_presets")
 
-    document_type = models.CharField(max_length=40, blank=True, default="")
     keywords = models.JSONField(default=list)
     keywords_mode = models.CharField(max_length=8, choices=KEYWORDS_MODE_CHOICES, default="all")
 

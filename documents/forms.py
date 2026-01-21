@@ -153,8 +153,6 @@ class FilterPresetForm(forms.ModelForm):
         model = FilterPreset
         fields = [
             "name",
-            "scope",
-            "document_type",
             "keywords_mode",
             "experience_min_years",
             "experience_max_years",
@@ -163,8 +161,6 @@ class FilterPresetForm(forms.ModelForm):
         ]
         widgets = {
             "name": forms.TextInput(attrs={"class": "input-text"}),
-            "scope": forms.Select(attrs={"class": "input-select"}),
-            "document_type": forms.TextInput(attrs={"class": "input-text"}),
             "keywords_mode": forms.Select(attrs={"class": "input-select"}),
             "experience_min_years": forms.NumberInput(attrs={"class": "input-text", "min": 0}),
             "experience_max_years": forms.NumberInput(attrs={"class": "input-text", "min": 0}),
