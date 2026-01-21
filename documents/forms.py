@@ -153,7 +153,6 @@ class FilterPresetForm(forms.ModelForm):
         model = FilterPreset
         fields = [
             "name",
-            "document_type",
             "keywords_mode",
             "experience_min_years",
             "experience_max_years",
@@ -162,7 +161,6 @@ class FilterPresetForm(forms.ModelForm):
         ]
         widgets = {
             "name": forms.TextInput(attrs={"class": "input-text"}),
-            "document_type": forms.TextInput(attrs={"class": "input-text"}),
             "keywords_mode": forms.Select(attrs={"class": "input-select"}),
             "experience_min_years": forms.NumberInput(attrs={"class": "input-text", "min": 0}),
             "experience_max_years": forms.NumberInput(attrs={"class": "input-text", "min": 0}),
@@ -174,23 +172,6 @@ class FilterPresetForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if self.instance and getattr(self.instance, "keywords", None):
             self.fields["keywords_text"].initial = "; ".join(self.instance.keywords)
-
-    def clean_document_type(self):
-        raw = (self.cleaned_data.get("document_type") or "").strip()
-        if not raw:
-            return ""
-        norm = _normalize_for_match(raw).replace(" ", "_")
-        aliases = {
-            "nota_fiscal": "nota_fiscal",
-            "nota-fiscal": "nota_fiscal",
-            "nfe": "nota_fiscal",
-            "nf-e": "nota_fiscal",
-            "curriculo": "curriculo",
-            "curriculum_vitae": "curriculo",
-            "cv": "curriculo",
-            "resume": "curriculo",
-        }
-        return aliases.get(norm, norm)
 
     def clean(self):
         cleaned = super().clean()

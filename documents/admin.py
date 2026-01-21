@@ -108,6 +108,6 @@ class ExtractionKeywordAdmin(admin.ModelAdmin):
 
 @admin.register(FilterPreset)
 class FilterPresetAdmin(admin.ModelAdmin):
-    list_display = ("name", "owner", "document_type", "updated_at")
-    list_filter = ("document_type", "updated_at")
-    search_fields = ("name", "owner__username", "owner__email", "document_type")
+    list_display = ("name", "owner", "updated_at")
+    list_filter = ("updated_at",)
+    search_fields = ("name", "owner__username", "owner__email")

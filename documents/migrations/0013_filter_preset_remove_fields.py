@@ -12,8 +12,4 @@ class Migration(migrations.Migration):
             model_name="filterpreset",
             name="document_type",
         ),
-        migrations.RemoveField(
-            model_name="filterpreset",
-            name="scope",
-        ),
     ]

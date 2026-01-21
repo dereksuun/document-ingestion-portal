@@ -57,13 +57,13 @@
           </datalist>
           <button class="btn btn-secondary" type="submit" name="action" value="add_keyword">Adicionar</button>
         </div>
-        <p class="help-text">Pode ser qualquer palavra; se existir um extrator, ele sera usado.</p>
+        <p class="help-text">Pode ser qualquer palavra; se existir um extrator, ele será usado.</p>
         {% if keyword_form.new_keyword.errors %}
           <p class="error-hint">{{ keyword_form.new_keyword.errors|striptags }}</p>
         {% endif %}
       </div>
 
-      <button class="btn btn-primary" type="submit" name="action" value="save">Salvar configuracoes</button>
+      <button class="btn btn-primary" type="submit" name="action" value="save">Salvar Configurações</button>
     </form>
 
     {% if user.is_staff %}
