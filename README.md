@@ -94,6 +94,8 @@ OCR_LANG=por
 docker compose up -d --build
 ```
 
+Isso sobe `web`, `worker`, `db` e `redis`.
+
 ### 3) Aplicar migrações
 
 ```bash
@@ -147,6 +149,10 @@ docker compose exec web python manage.py collectstatic --noinput
 docker compose logs -f web
 ```
 
+```bash
+docker compose logs -f worker
+```
+
 ---
 
 ## Rodar local (sem Docker)
@@ -160,6 +166,18 @@ pip install -r requirements.txt
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
+```
+
+Em outro terminal, rode o worker:
+
+```bash
+celery -A automacao_contas worker -l INFO --concurrency=1
+```
+
+Para rodar local, suba o Redis e use:
+
+```bash
+CELERY_BROKER_URL=redis://localhost:6379/0
 ```
 
 ---
@@ -353,6 +371,8 @@ OCR_LANG=por
 docker compose up -d --build
 ```
 
+This starts `web`, `worker`, `db`, and `redis`.
+
 ### 3) Run migrations
 
 ```bash
@@ -406,6 +426,10 @@ docker compose exec web python manage.py collectstatic --noinput
 docker compose logs -f web
 ```
 
+```bash
+docker compose logs -f worker
+```
+
 ---
 
 ## Run locally (no Docker)
@@ -417,6 +441,18 @@ pip install -r requirements.txt
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
+```
+
+In another terminal, start the worker:
+
+```bash
+celery -A automacao_contas worker -l INFO --concurrency=1
+```
+
+For local runs, start Redis and set:
+
+```bash
+CELERY_BROKER_URL=redis://localhost:6379/0
 ```
 
 ---

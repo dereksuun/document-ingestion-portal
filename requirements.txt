@@ -6,3 +6,5 @@ gunicorn
 psycopg2-binary
 dj-database-url>=2.0
 whitenoise
+celery>=5.3
+redis>=5.0

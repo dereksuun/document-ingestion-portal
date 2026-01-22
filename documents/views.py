@@ -26,15 +26,8 @@ from .models import (
     VALUE_TYPE_CHOICES,
     _normalize_keyword,
 )
-from .services import (
-    KEYWORD_PREFIX,
-    _normalize_for_match,
-    extract_age_years,
-    extract_contact_phone,
-    extract_experience_years,
-    process_document,
-    sanitize_payload,
-)
+from .services import KEYWORD_PREFIX, _normalize_for_match, sanitize_payload
+from .tasks import process_document_task
 
 PAGE_SIZE = 10
 MAX_BULK = 25
@@ -163,53 +156,12 @@ def _filter_enabled_fields(choices, enabled_fields):
     return list(dict.fromkeys(filtered))
 
 
-def _get_keyword_map(owner, selected_fields):
-    keyword_ids = []
-    for field in selected_fields or []:
-        if not field.startswith(KEYWORD_PREFIX):
-            continue
-        raw_id = field.split(":", 1)[1]
-        if not raw_id.isdigit():
-            continue
-        keyword_ids.append(int(raw_id))
-    if not keyword_ids:
-        return {}
-    keywords = ExtractionKeyword.objects.filter(owner=owner, id__in=keyword_ids)
-    mapping = {}
-    for keyword in keywords:
-        mapping[f"{KEYWORD_PREFIX}{keyword.id}"] = {
-            "label": keyword.label,
-            "resolved_kind": keyword.resolved_kind,
-            "field_key": keyword.field_key,
-            "inferred_type": keyword.inferred_type,
-            "value_type": keyword.value_type,
-            "strategy": keyword.strategy,
-            "strategy_params": keyword.strategy_params or {},
-            "anchors": keyword.anchors or [],
-            "match_strategy": keyword.match_strategy,
-            "confidence": keyword.confidence,
-        }
-    return mapping
-
-
 def _get_profile(user):
     profile, _ = ExtractionProfile.objects.get_or_create(owner=user)
     if profile.enabled_fields is None:
         profile.enabled_fields = []
         profile.save(update_fields=["enabled_fields"])
     return profile
-
-
-def _apply_extracted_fields(doc: Document, extracted_text: str, payload: dict):
-    text_value = extracted_text or ""
-    normalized = _normalize_for_match(text_value)
-    doc.extracted_text_normalized = normalized
-    doc.text_content = text_value
-    doc.text_content_norm = normalized
-    doc.document_type = (payload or {}).get("document_type") or ""
-    doc.contact_phone = extract_contact_phone(text_value)
-    doc.extracted_age_years = extract_age_years(text_value)
-    doc.extracted_experience_years = extract_experience_years(text_value)
 
 
 def _get_force_ocr(request) -> bool:
@@ -229,7 +181,6 @@ def upload_documents(request):
             if selected_fields != (profile.enabled_fields or []):
                 profile.enabled_fields = selected_fields
                 profile.save(update_fields=["enabled_fields", "updated_at"])
-            keyword_map = _get_keyword_map(request.user, selected_fields)
             created_docs = []
             logger.info(
                 "upload_documents user=%s count=%s files=%s",
@@ -246,52 +197,12 @@ def upload_documents(request):
                         selected_fields=selected_fields,
                     )
                     created_docs.append(doc)
+                for doc in created_docs:
+                    transaction.on_commit(
+                        lambda doc_id=str(doc.id): process_document_task.delay(doc_id)
+                    )
             for doc in created_docs:
-                logger.info("process_start doc=%s file=%s action=auto", doc.id, doc.original_filename)
-                doc.mark_processing()
-                doc.save(
-                    update_fields=[
-                        "status",
-                        "processed_at",
-                        "error_message",
-                        "extracted_json",
-                        "extracted_text",
-                        "extracted_text_normalized",
-                        "text_content",
-                        "text_content_norm",
-                        "document_type",
-                        "contact_phone",
-                        "extracted_age_years",
-                        "extracted_experience_years",
-                        "ocr_used",
-                        "text_quality",
-                    ]
-                )
-                try:
-                    data, extracted_text, ocr_used, text_quality = process_document(
-                        doc.file.path,
-                        doc.selected_fields or [],
-                        keyword_map=keyword_map,
-                        doc_id=str(doc.id),
-                        filename=doc.original_filename,
-                    )
-                    _apply_extracted_fields(doc, extracted_text, data)
-                    doc.mark_done(
-                        data,
-                        extracted_text=extracted_text,
-                        ocr_used=ocr_used,
-                        text_quality=text_quality,
-                    )
-                    doc.save()
-                    logger.info("process_done doc=%s file=%s action=auto", doc.id, doc.original_filename)
-                except Exception as exc:
-                    doc.mark_failed(str(exc))
-                    doc.save(update_fields=["status", "processed_at", "error_message"])
-                    logger.exception(
-                        "process_failed doc=%s file=%s action=auto",
-                        doc.id,
-                        doc.original_filename,
-                    )
+                logger.info("process_enqueued doc=%s file=%s action=auto", doc.id, doc.original_filename)
             return redirect("documents_list")
     else:
         form = MultiUploadForm()
@@ -325,8 +236,19 @@ def documents_list(request):
     exp_min_override = _parse_int(exp_min_raw)
     age_min_override = _parse_int(age_min_raw)
     age_max_override = _parse_int(age_max_raw)
+    filters_active = bool(
+        search_query
+        or exclude_query
+        or preset_id
+        or exp_min_raw
+        or age_min_raw
+        or age_max_raw
+        or mode == "any"
+    )
 
-    docs = Document.objects.filter(owner=request.user)
+    base_docs = Document.objects.filter(owner=request.user)
+    processing_count = base_docs.filter(status=DocumentStatus.PROCESSING).count()
+    docs = base_docs
     presets = list(FilterPreset.objects.filter(owner=request.user).order_by("name"))
     active_preset = None
     preset_keywords_display = ""
@@ -425,6 +347,8 @@ def documents_list(request):
             "mode": mode,
             "result_count": result_count,
             "querystring": querystring,
+            "filters_active": filters_active,
+            "processing_count": processing_count,
         },
     )
 
@@ -649,55 +573,19 @@ def process_document_view(request, doc_id):
     action = "reprocess" if allow_reprocess else "process"
     force_ocr = _get_force_ocr(request)
     logger.info(
-        "process_start doc=%s file=%s action=%s force_ocr=%s",
+        "process_enqueue doc=%s file=%s action=%s force_ocr=%s",
         doc.id,
         doc.original_filename,
         action,
         force_ocr,
     )
-    doc.mark_processing()
-    doc.save(
-        update_fields=[
-            "status",
-            "processed_at",
-            "error_message",
-            "extracted_json",
-            "extracted_text",
-            "extracted_text_normalized",
-            "text_content",
-            "text_content_norm",
-            "document_type",
-            "contact_phone",
-            "extracted_age_years",
-            "extracted_experience_years",
-            "ocr_used",
-            "text_quality",
-        ]
-    )
-
-    try:
-        keyword_map = _get_keyword_map(request.user, doc.selected_fields or [])
-        data, extracted_text, ocr_used, text_quality = process_document(
-            doc.file.path,
-            doc.selected_fields or [],
-            keyword_map=keyword_map,
-            doc_id=str(doc.id),
-            filename=doc.original_filename,
+    transaction.on_commit(
+        lambda doc_id=str(doc.id): process_document_task.delay(
+            doc_id,
+            force=allow_reprocess,
             force_ocr=force_ocr,
         )
-        _apply_extracted_fields(doc, extracted_text, data)
-        doc.mark_done(
-            data,
-            extracted_text=extracted_text,
-            ocr_used=ocr_used,
-            text_quality=text_quality,
-        )
-        doc.save()
-        logger.info("process_done doc=%s file=%s action=%s", doc.id, doc.original_filename, action)
-    except Exception as exc:
-        doc.mark_failed(str(exc))
-        doc.save(update_fields=["status", "processed_at", "error_message"])
-        logger.exception("process_failed doc=%s file=%s action=%s", doc.id, doc.original_filename, action)
+    )
 
     return redirect("documents_list")
 
@@ -725,61 +613,23 @@ def process_documents_bulk(request):
     docs = list(qs)
     force_ocr = _get_force_ocr(request)
     logger.info(
-        "bulk_process_start user=%s action=%s count=%s force_ocr=%s",
+        "bulk_process_enqueue user=%s action=%s count=%s force_ocr=%s",
         request.user.id,
         action,
         len(docs),
         force_ocr,
     )
-    keyword_fields = []
-    for doc in docs:
-        keyword_fields.extend(doc.selected_fields or [])
-    keyword_map = _get_keyword_map(request.user, keyword_fields)
 
     for doc in docs:
-        doc.mark_processing()
-        doc.save(
-            update_fields=[
-                "status",
-                "processed_at",
-                "error_message",
-                "extracted_json",
-                "extracted_text",
-                "extracted_text_normalized",
-                "text_content",
-                "text_content_norm",
-                "document_type",
-                "contact_phone",
-                "extracted_age_years",
-                "extracted_experience_years",
-                "ocr_used",
-                "text_quality",
-            ]
-        )
-        try:
-            data, extracted_text, ocr_used, text_quality = process_document(
-                doc.file.path,
-                doc.selected_fields or [],
-                keyword_map=keyword_map,
-                doc_id=str(doc.id),
-                filename=doc.original_filename,
+        transaction.on_commit(
+            lambda doc_id=str(doc.id): process_document_task.delay(
+                doc_id,
+                force=action == "reprocess",
                 force_ocr=force_ocr,
             )
-            _apply_extracted_fields(doc, extracted_text, data)
-            doc.mark_done(
-                data,
-                extracted_text=extracted_text,
-                ocr_used=ocr_used,
-                text_quality=text_quality,
-            )
-            doc.save()
-            logger.info("process_done doc=%s file=%s", doc.id, doc.original_filename)
-        except Exception as exc:
-            doc.mark_failed(str(exc))
-            doc.save(update_fields=["status", "processed_at", "error_message"])
-            logger.exception("process_failed doc=%s file=%s", doc.id, doc.original_filename)
+        )
+        logger.info("process_enqueue doc=%s file=%s action=%s", doc.id, doc.original_filename, action)
 
-    logger.info("bulk_process_end user=%s action=%s count=%s", request.user.id, action, len(docs))
     return redirect("documents_list")
 
 

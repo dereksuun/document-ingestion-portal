@@ -101,6 +101,9 @@
         {% if active_preset %}
           <span class="results-meta">Filtro: {{ active_preset.name }}</span>
         {% endif %}
+        {% if filters_active and processing_count %}
+          <span class="results-meta">Documentos em processamento nao entram nos filtros.</span>
+        {% endif %}
       </div>
     </form>
 

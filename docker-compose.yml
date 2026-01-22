@@ -13,22 +13,48 @@ services:
       timeout: 5s
       retries: 20
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
   web:
     build: .
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
     environment:
       DJANGO_SETTINGS_MODULE: automacao_contas.settings
       DATABASE_URL: postgres://automacao:automacao@db:5432/automacao_contas
       ALLOWED_HOSTS: "*"
       CSRF_TRUSTED_ORIGINS: "http://localhost:8000,http://127.0.0.1:8000"
       OCR_LANG: "por"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
     volumes:
       - ./media:/app/media
       - ./staticfiles:/app/staticfiles
     ports:
       - "8000:8000"
+
+  worker:
+    build: .
+    command: celery -A automacao_contas worker -l INFO --concurrency=1
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      DJANGO_SETTINGS_MODULE: automacao_contas.settings
+      DATABASE_URL: postgres://automacao:automacao@db:5432/automacao_contas
+      OCR_LANG: "por"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+    volumes:
+      - ./media:/app/media
 
 volumes:
   pgdata:
