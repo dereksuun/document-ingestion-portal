@@ -79,6 +79,7 @@ DATABASE_URL=postgres://automacao:automacao@db:5432/automacao_contas
 
 # OCR (opcional)
 OCR_LANG=por
+#####
 ```
 
 > No Docker Compose, essas variaveis ja estao no `docker-compose.yml`. Use o `.env` para sobrescrever.
