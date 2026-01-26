@@ -10,6 +10,7 @@ class LoginRequiredMiddleware:
             self.login_url,
             "/logout/",
             "/admin/",
+            "/api/",
         ]
         if settings.STATIC_URL:
             self.allowed_prefixes.append(settings.STATIC_URL)

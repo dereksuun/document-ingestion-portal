@@ -17,6 +17,11 @@ CSRF_TRUSTED_ORIGINS = [
     if origin.strip()
 ]
 
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "https://app.seudominio.com",
+]
+
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -26,10 +31,13 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django.contrib.humanize",
+    "rest_framework",
+    "corsheaders",
     "documents",
 ]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",

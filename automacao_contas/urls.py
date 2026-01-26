@@ -22,6 +22,7 @@ urlpatterns = [
         name="login",
     ),
     path("logout/", auth_views.LogoutView.as_view(next_page=reverse_lazy("login")), name="logout"),
+    path("api/", include("documents.api_urls")),
     path("documents/", include("documents.urls")),
 ]
 
