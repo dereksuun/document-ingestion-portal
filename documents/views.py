@@ -74,6 +74,7 @@ def _apply_preset_filters(
     preset: FilterPreset,
     *,
     experience_min_years: int | None = None,
+    experience_max_years: int | None = None,
     age_min_years: int | None = None,
     age_max_years: int | None = None,
     exclude_unknowns: bool | None = None,
@@ -82,6 +83,8 @@ def _apply_preset_filters(
         return queryset
     if experience_min_years is None:
         experience_min_years = preset.experience_min_years
+    if experience_max_years is None:
+        experience_max_years = preset.experience_max_years
     if age_min_years is None:
         age_min_years = preset.age_min_years
     if age_max_years is None:
@@ -95,6 +98,14 @@ def _apply_preset_filters(
             queryset = queryset.filter(
                 Q(extracted_experience_years__isnull=True)
                 | Q(extracted_experience_years__gte=experience_min_years)
+            )
+    if experience_max_years is not None:
+        if exclude_unknowns:
+            queryset = queryset.filter(extracted_experience_years__lte=experience_max_years)
+        else:
+            queryset = queryset.filter(
+                Q(extracted_experience_years__isnull=True)
+                | Q(extracted_experience_years__lte=experience_max_years)
             )
     if age_min_years is not None:
         if exclude_unknowns:
@@ -216,6 +227,7 @@ def documents_list(request):
     exclude_query = request.GET.get("exclude", "").strip()
     preset_id = request.GET.get("preset", "").strip()
     exp_min_raw = request.GET.get("experience_min_years", "").strip()
+    exp_max_raw = request.GET.get("experience_max_years", "").strip()
     age_min_raw = request.GET.get("age_min_years", "").strip()
     age_max_raw = request.GET.get("age_max_years", "").strip()
     mode = (request.GET.get("mode", "all") or "all").lower()
@@ -234,6 +246,7 @@ def documents_list(request):
             return None
 
     exp_min_override = _parse_int(exp_min_raw)
+    exp_max_override = _parse_int(exp_max_raw)
     age_min_override = _parse_int(age_min_raw)
     age_max_override = _parse_int(age_max_raw)
     filters_active = bool(
@@ -241,6 +254,7 @@ def documents_list(request):
         or exclude_query
         or preset_id
         or exp_min_raw
+        or exp_max_raw
         or age_min_raw
         or age_max_raw
         or mode == "any"
@@ -257,6 +271,7 @@ def documents_list(request):
     age_min_value = age_min_raw
     age_max_value = age_max_raw
     effective_terms = search_terms
+    effective_exclude_terms = exclude_terms
     effective_mode = mode
     if preset_id:
         active_preset = get_object_or_404(FilterPreset, id=preset_id, owner=request.user)
@@ -282,6 +297,7 @@ def documents_list(request):
             docs,
             active_preset,
             experience_min_years=exp_min_override,
+            experience_max_years=exp_max_override,
             age_min_years=age_min_override,
             age_max_years=age_max_override,
             exclude_unknowns=active_preset.exclude_unknowns,
@@ -299,10 +315,14 @@ def documents_list(request):
                 preset_mode = (active_preset.keywords_mode or "all").lower()
                 if preset_mode in {"all", "any"}:
                     effective_mode = preset_mode
+        preset_exclude_terms = _split_terms(active_preset.exclude_terms_text)
+        if preset_exclude_terms and not exclude_terms:
+            effective_exclude_terms = preset_exclude_terms
+            exclude_query = active_preset.exclude_terms_text
 
     docs = _apply_term_filters(docs, effective_terms, mode=effective_mode)
-    if exclude_terms:
-        for term in exclude_terms:
+    if effective_exclude_terms:
+        for term in effective_exclude_terms:
             docs = docs.exclude(text_content_norm__icontains=term)
 
     docs = docs.order_by("-uploaded_at")
@@ -663,6 +683,19 @@ def _unique_name(filename: str, used_names: set[str], token: str) -> str:
     return candidate
 
 
+def _iter_file_chunks(file_obj, chunk_size=1024 * 1024):
+    if hasattr(file_obj, "chunks"):
+        for chunk in file_obj.chunks(chunk_size=chunk_size):
+            if chunk:
+                yield chunk
+        return
+    while True:
+        chunk = file_obj.read(chunk_size)
+        if not chunk:
+            break
+        yield chunk
+
+
 def _build_json_filename(doc):
     base_name = doc.original_filename or str(doc.id)
     base_name = os.path.splitext(base_name)[0]
@@ -747,19 +780,20 @@ def download_documents_files_bulk(request):
             if not doc.file:
                 missing += 1
                 continue
-            try:
-                file_path = doc.file.path
-            except Exception:
-                missing += 1
-                continue
-            if not os.path.exists(file_path):
+            if not doc.file.name:
                 missing += 1
                 continue
             original_name = doc.original_filename or os.path.basename(doc.file.name) or str(doc.id)
             safe_name = _safe_name(original_name, str(doc.id))
             filename = _unique_name(safe_name, used_names, str(doc.id)[:8])
-            zip_file.write(file_path, arcname=filename)
-            added += 1
+            try:
+                with doc.file.open("rb") as file_obj:
+                    with zip_file.open(filename, "w") as dest:
+                        for chunk in _iter_file_chunks(file_obj):
+                            dest.write(chunk)
+                added += 1
+            except Exception:
+                missing += 1
 
     if added == 0:
         return HttpResponse("Nenhum arquivo disponivel para download.", status=400)

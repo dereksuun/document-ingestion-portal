@@ -112,6 +112,7 @@ class FilterPreset(models.Model):
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="filter_presets")
 
     keywords = models.JSONField(default=list)
+    exclude_terms_text = models.TextField(blank=True, default="")
     keywords_mode = models.CharField(max_length=8, choices=KEYWORDS_MODE_CHOICES, default="all")
     exclude_unknowns = models.BooleanField(default=False)
 

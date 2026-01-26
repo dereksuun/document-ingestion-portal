@@ -186,7 +186,6 @@ class FilterPresetForm(forms.ModelForm):
         instance = super().save(commit=False)
         raw = self.cleaned_data.get("keywords_text") or ""
         instance.keywords = _split_keywords(raw)
-        instance.experience_max_years = None
         if commit:
             instance.save()
         return instance
